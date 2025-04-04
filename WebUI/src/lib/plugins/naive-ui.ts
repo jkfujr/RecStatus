@@ -1,0 +1,52 @@
+import {
+  create,
+  NButton,
+  NCard,
+  NConfigProvider,
+  NDialogProvider,
+  NIcon,
+  NInput,
+  NLoadingBarProvider,
+  NMenu,
+  NMessageProvider,
+  NNotificationProvider,
+  NRadioButton,
+  NRadioGroup,
+  NScrollbar,
+  NSpin,
+  NTag,
+  NEmpty,
+  NDrawer,
+  NDrawerContent,
+  NDescriptions,
+  NDescriptionsItem,
+  NDataTable,
+  NAlert
+} from 'naive-ui'
+
+export default create({
+  components: [
+    NButton,
+    NCard,
+    NConfigProvider,
+    NDialogProvider,
+    NIcon,
+    NInput,
+    NLoadingBarProvider,
+    NMenu,
+    NMessageProvider,
+    NNotificationProvider,
+    NRadioButton,
+    NRadioGroup,
+    NScrollbar,
+    NSpin,
+    NTag,
+    NEmpty,
+    NDrawer,
+    NDrawerContent,
+    NDescriptions,
+    NDescriptionsItem,
+    NDataTable,
+    NAlert
+  ]
+}) 

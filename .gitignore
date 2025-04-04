@@ -1,10 +1,12 @@
-__pycache__/
+__pycache__
+.pyc
 .vscode
-Rec-Stutas
+
+node_modules
 logs
 web
+Build
 * copy.*
+.gitignore
 config.yaml
 config2.yaml
-1.ini
-.gitignore
