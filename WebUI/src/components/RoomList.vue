@@ -232,11 +232,14 @@ watch(() => route, () => {
 })
 
 onMounted(() => {
-  roomStore.init()
+  // 不自动初始化roomStore，而是由父组件Rooms.vue决定何时初始化
+  if (roomStore.rooms.length === 0) {
+    roomStore.fetchRooms()
+  }
 })
 
 onUnmounted(() => {
-  roomStore.stopAutoRefresh()
+  // 不在这里停止自动刷新，由父组件控制
 })
 </script>
 

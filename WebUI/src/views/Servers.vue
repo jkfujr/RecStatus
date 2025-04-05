@@ -213,7 +213,6 @@
 
 <script setup lang="ts">
 import { RefreshOutline, AddOutline, InformationCircleOutline, TrashOutline } from '@vicons/ionicons5'
-import { useRoomStore } from '@/lib/store/room'
 import { NTag, NDropdown, NButton, NIcon } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import type { RecServer, RoomData } from '@/lib/types/api'
@@ -225,7 +224,6 @@ import { useAuthStore } from '@/lib/store/auth'
 import { addServer, deleteServers } from '@/lib/utils/api'
 import RoomDetail from '@/components/RoomDetail.vue'
 
-const roomStore = useRoomStore()
 const serverStore = useServerStore()
 const authStore = useAuthStore()
 const message = useMessage()
@@ -243,9 +241,8 @@ let updateTimer: number | null = null
 const dataTableRef = ref(null)
 
 const { loading: serverLoading } = storeToRefs(serverStore)
-const { loading: roomLoading } = storeToRefs(roomStore)
 
-const loading = computed(() => serverLoading.value || roomLoading.value)
+const loading = computed(() => serverLoading.value)
 
 const canAddServer = computed(() => {
   return authStore.isAuthenticated && !authStore.loading
@@ -269,8 +266,8 @@ const parseHostPort = (url: string) => {
 
 // 排序逻辑
 const filteredServerData = computed(() => {
-  const filteredData = serverStore.serverStats
-    .filter((server: RecServer & { totalRooms?: number; streamingRooms?: number; recordingRooms?: number }) => 
+  const filteredData = serverStore.servers
+    .filter((server: RecServer) => 
       serverFilter.value === 'all' || server.recType === serverFilter.value
     )
   if (!sortConfig.value.key) {
@@ -317,7 +314,7 @@ onMounted(() => {
   })
   const calculateTableWidth = () => {
     const baseWidth = 48
-    const urlColumnWidth = Math.max(...serverStore.serverStats.map((server: RecServer) => 
+    const urlColumnWidth = Math.max(...serverStore.servers.map((server: RecServer) => 
       getHostname(server.recHost).length * 10 + 100
     ))
     const numberColumnWidth = 100
@@ -325,7 +322,7 @@ onMounted(() => {
     tableWidth.value = baseWidth + urlColumnWidth + numberColumnWidth * 3
   }
 
-  watch(() => serverStore.serverStats, calculateTableWidth, { immediate: true })
+  watch(() => serverStore.servers, calculateTableWidth, { immediate: true })
 
   handleRefresh()
 
@@ -348,13 +345,13 @@ const getHostname = (url: string) => {
   }
 }
 
-const getRowClassName = (row: RecServer & { recordingRooms?: number; streamingRooms?: number }): string => {
+const getRowClassName = (row: RecServer): string => {
   if (!row) return ''
   
   // 对象转换字符串
   const classObj = {
-    'is-recording': row.recordingRooms && row.recordingRooms > 0,
-    'is-streaming': row.streamingRooms && row.streamingRooms > 0,
+    'is-recording': row.recordingRooms > 0,
+    'is-streaming': row.streamingRooms > 0,
     'is-offline': row.recStatus === 'offline',
     'is-error': row.recStatus === 'error'
   }
@@ -428,7 +425,7 @@ const getRowProps = (row: RecServer) => {
 }
 
 // 修改 columns 数组，删除最后一列操作列
-const columns: DataTableColumns<RecServer & { totalRooms?: number; streamingRooms?: number; recordingRooms?: number }> = [
+const columns: DataTableColumns<RecServer> = [
   {
     title: () => h('div', { 
       class: 'sortable-header', 
@@ -812,7 +809,7 @@ async function handleAddBatchServers() {
     
     showAddServerModal.value = false
     resetForms()
-    roomStore.fetchRooms()
+    handleRefresh()
     
   } catch (error) {
     message.error((error as Error).message)
@@ -837,10 +834,7 @@ function resetForms() {
 }
 
 async function handleRefresh() {
-  await Promise.all([
-    serverStore.fetchServers(),
-    roomStore.fetchRooms()
-  ])
+  await serverStore.fetchServers()
 }
 
 const lastUpdatedText = computed(() => serverStore.lastUpdatedText)

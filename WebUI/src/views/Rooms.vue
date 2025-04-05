@@ -400,6 +400,19 @@ onMounted(async () => {
   if (serverStore.servers.length === 0) {
     await serverStore.fetchServers()
   }
+  
+  // 初始化房间数据
+  if (roomStore.rooms.length === 0) {
+    await roomStore.fetchRooms()
+  }
+  
+  // 启动自动刷新
+  roomStore.startAutoRefresh()
+})
+
+onUnmounted(() => {
+  // 停止自动刷新
+  roomStore.stopAutoRefresh()
 })
 
 watch(() => formModel.value.recType, () => {

@@ -16,25 +16,18 @@
 
 <script setup lang="ts">
 import { useThemeStore } from '@/lib/store/theme'
-import { useRoomStore } from '@/lib/store/room'
 import GlobalProvider from '@/components/GlobalProvider.vue'
 import { useAuthStore } from '@/lib/store/auth'
 
 const themeStore = useThemeStore()
-const roomStore = useRoomStore()
 const authStore = useAuthStore()
 
 onMounted(() => {
   themeStore.init()
-  roomStore.init()
 })
 
 onMounted(async () => {
   await authStore.checkAuthStatus()
-})
-
-onUnmounted(() => {
-  roomStore.stopAutoRefresh()
 })
 </script>
 

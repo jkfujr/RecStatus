@@ -1,8 +1,6 @@
 import { defineStore } from 'pinia'
 import { fetchServers } from '@/lib/utils/api'
-import type { RecServer, RoomData } from '@/lib/types/api'
-import { useRoomStore } from './room'
-import { useRoomUtils } from '@/lib/utils/useRoomUtils'
+import type { RecServer } from '@/lib/types/api'
 
 interface ServerState {
   servers: RecServer[]
@@ -43,26 +41,6 @@ export const useServerStore = defineStore('server', {
     filteredServers: (state) => (type: 'all' | 'recheme' | 'blrec') => {
       if (type === 'all') return state.servers
       return state.servers.filter((server: RecServer) => server.recType === type)
-    },
-
-    serverStats: (state) => {
-      const roomStore = useRoomStore()
-      const { isStreaming, isRecording } = useRoomUtils()
-      return state.servers.map((server: RecServer) => {
-        const rooms = roomStore.rooms.filter((room: RoomData) => 
-          room.recServer.recHost === server.recHost
-        )
-        const stats = {
-          totalRooms: rooms.length,
-          streamingRooms: rooms.filter((room: RoomData) => isStreaming(room)).length,
-          recordingRooms: rooms.filter((room: RoomData) => isRecording(room)).length
-        }
-
-        return {
-          ...server,
-          ...stats
-        }
-      })
     }
   },
 

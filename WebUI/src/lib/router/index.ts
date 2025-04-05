@@ -40,6 +40,15 @@ const routes: RouteRecordRaw[] = [
           requiresAuth: false
         }
       },
+      {
+        path: ':pathMatch(.*)*',
+        name: 'not-found',
+        component: () => import('@/views/404.vue'),
+        meta: {
+          title: '页面不存在',
+          requiresAuth: false
+        }
+      }
     ],
   },
 ]

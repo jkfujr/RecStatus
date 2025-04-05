@@ -9,7 +9,7 @@
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ roomStore.totalUsers }}</span>
+            <span class="number">{{ stats.totalRooms }}</span>
             <span class="label">个</span>
           </div>
         </n-card>
@@ -20,7 +20,7 @@
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ roomStore.streamingUsers }}</span>
+            <span class="number">{{ stats.streamingRooms }}</span>
             <span class="label">个</span>
           </div>
         </n-card>
@@ -31,7 +31,7 @@
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ roomStore.recordingUsers }}</span>
+            <span class="number">{{ stats.recordingRooms }}</span>
             <span class="label">个</span>
           </div>
         </n-card>
@@ -42,38 +42,40 @@
             </div>
           </template>
           <div class="stat-value">
-            <span class="number">{{ serverStore.servers.length }}</span>
+            <span class="number">{{ stats.totalServers }}</span>
             <span class="label">个</span>
           </div>
         </n-card>
       </div>
 
       <n-alert
-        v-if="roomStore.error || serverStore.error"
+        v-if="serverStore.error"
         type="error"
         closable
         class="mb-4"
-      >{{ roomStore.error || serverStore.error }}</n-alert>
+      >{{ serverStore.error }}</n-alert>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useRoomStore } from '@/lib/store/room'
 import { useServerStore } from '@/lib/store/server'
+import { computed } from 'vue'
 
-const roomStore = useRoomStore()
 const serverStore = useServerStore()
 
-async function initData() {
-  await Promise.all([
-    serverStore.fetchServers(),
-    roomStore.fetchRooms()
-  ])
-}
+const stats = computed(() => {
+  const servers = serverStore.servers
+  return {
+    totalRooms: servers.reduce((sum, server) => sum + server.totalRooms, 0),
+    streamingRooms: servers.reduce((sum, server) => sum + server.streamingRooms, 0),
+    recordingRooms: servers.reduce((sum, server) => sum + server.recordingRooms, 0),
+    totalServers: servers.length
+  }
+})
 
 onMounted(() => {
-  initData()
+  serverStore.fetchServers()
 })
 </script>
 

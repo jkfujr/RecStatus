@@ -138,6 +138,9 @@ export interface RecServer {
   recHost: string
   recStatus: 'online' | 'offline' | 'error'
   recManage: boolean
+  totalRooms: number
+  streamingRooms: number
+  recordingRooms: number
 }
 
 export interface ServerQueryParams {

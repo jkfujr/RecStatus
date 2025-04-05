@@ -82,6 +82,9 @@ class RecServerInfo(BaseModel):
     recHost: str
     recStatus: str
     recManage: bool
+    totalRooms: int = 0
+    streamingRooms: int = 0
+    recordingRooms: int = 0
 
 class RoomConfigRequest(BaseModel):
     danmaku: bool = True
@@ -197,12 +200,49 @@ async def check_server_status(url: str) -> bool:
 async def get_all_recservers() -> List[RecServerInfo]:
     servers = []
     """获取所有录播机信息"""
+    all_rooms = await get_rooms()
+    server_room_stats = {}
+    for room in all_rooms:
+        if not isinstance(room, dict) or "recServer" not in room:
+            continue
+            
+        rec_server = room.get("recServer", {})
+        rec_type = rec_server.get("recType")
+        rec_name = rec_server.get("recName")
+        
+        if not rec_type or not rec_name:
+            continue
+            
+        server_key = (rec_type, rec_name)
+        
+        if server_key not in server_room_stats:
+            server_room_stats[server_key] = {"total": 0, "streaming": 0, "recording": 0}
+            
+        # 增加总数
+        server_room_stats[server_key]["total"] += 1
+        
+        # 检查是否直播中
+        if rec_type == "recheme" and room.get("streaming", False):
+            server_room_stats[server_key]["streaming"] += 1
+        elif rec_type == "blrec" and room.get("room_info", {}).get("live_status", 0) == 1:
+            server_room_stats[server_key]["streaming"] += 1
+            
+        # 检查是否录制中
+        if rec_type == "recheme" and room.get("recording", False):
+            server_room_stats[server_key]["recording"] += 1
+        elif rec_type == "blrec" and room.get("task_status", {}).get("running_status", "") == "recording":
+            server_room_stats[server_key]["recording"] += 1
+    
     if "RECHEME" in config:
         for rec_name, api_info_list in config["RECHEME"].items():
             if isinstance(api_info_list, list):
                 for api_info in api_info_list:
                     host = api_info.get("URL", "").rstrip('/')
                     manage = api_info.get("MANAGE", True)
+                    
+                    # 获取统计数据
+                    stats = server_room_stats.get(("recheme", rec_name), {"total": 0, "streaming": 0, "recording": 0})
+                    
                     try:
                         recheme = create_recheme_instance(api_info, rec_name)
                         response = recheme._make_request("room")
@@ -212,7 +252,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                                 recType="recheme",
                                 recHost=host,
                                 recStatus="online",
-                                recManage=manage
+                                recManage=manage,
+                                totalRooms=stats["total"],
+                                streamingRooms=stats["streaming"],
+                                recordingRooms=stats["recording"]
                             ))
                         else:
                             servers.append(RecServerInfo(
@@ -220,7 +263,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                                 recType="recheme",
                                 recHost=host,
                                 recStatus="offline",
-                                recManage=manage
+                                recManage=manage,
+                                totalRooms=stats["total"],
+                                streamingRooms=stats["streaming"],
+                                recordingRooms=stats["recording"]
                             ))
                     except Exception as e:
                         logger.error(f"[录播姬] {rec_name} 状态检查失败: {e}")
@@ -229,7 +275,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                             recType="recheme",
                             recHost=host,
                             recStatus="error",
-                            recManage=manage
+                            recManage=manage,
+                            totalRooms=stats["total"],
+                            streamingRooms=stats["streaming"],
+                            recordingRooms=stats["recording"]
                         ))
 
     if "BLREC" in config:
@@ -238,6 +287,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                 for api_info in api_info_list:
                     host = api_info.get("URL", "").rstrip('/')
                     manage = api_info.get("MANAGE", True)
+                    
+                    # 获取统计数据
+                    stats = server_room_stats.get(("blrec", rec_name), {"total": 0, "streaming": 0, "recording": 0})
+                    
                     try:
                         blrec = create_blrec_instance(api_info, rec_name)
                         response = blrec._make_request("tasks/data")
@@ -247,7 +300,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                                 recType="blrec",
                                 recHost=host,
                                 recStatus="online",
-                                recManage=manage
+                                recManage=manage,
+                                totalRooms=stats["total"],
+                                streamingRooms=stats["streaming"],
+                                recordingRooms=stats["recording"]
                             ))
                         else:
                             servers.append(RecServerInfo(
@@ -255,7 +311,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                                 recType="blrec",
                                 recHost=host,
                                 recStatus="offline",
-                                recManage=manage
+                                recManage=manage,
+                                totalRooms=stats["total"],
+                                streamingRooms=stats["streaming"],
+                                recordingRooms=stats["recording"]
                             ))
                     except Exception as e:
                         logger.error(f"[BLREC] {rec_name} 状态检查失败: {e}")
@@ -264,7 +323,10 @@ async def get_all_recservers() -> List[RecServerInfo]:
                             recType="blrec",
                             recHost=host,
                             recStatus="error",
-                            recManage=manage
+                            recManage=manage,
+                            totalRooms=stats["total"],
+                            streamingRooms=stats["streaming"],
+                            recordingRooms=stats["recording"]
                         ))
     
     return servers
