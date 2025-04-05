@@ -4,7 +4,9 @@
       class="server-scrollbar"
       style="height: calc(100vh - 64px)"
     >
-      <div class="server-container">
+      <div class="server-container"
+        @contextmenu="handleContainerContextMenu"
+      >
         <div class="filter-section">
           <div class="left">
             <n-radio-group v-model:value="serverFilter" size="small" buttonStyle="solid" class="mr-2">
@@ -50,6 +52,7 @@
         </div>
 
         <n-data-table
+          ref="dataTableRef"
           :loading="loading"
           :data="filteredServerData" 
           :bordered="false"
@@ -60,6 +63,7 @@
           :max-height="tableMaxHeight"
           :scroll-x="tableWidth"
           class="server-table"
+          :row-props="getRowProps"
         />
       </div>
     </n-scrollbar>
@@ -193,11 +197,22 @@
       :room="selectedRoom"
       @room:deleted="handleRoomDeleted"
     />
+
+    <n-dropdown
+      placement="bottom-start"
+      trigger="manual"
+      :x="x"
+      :y="y"
+      :options="dropdownOptions"
+      :show="showDropdown"
+      :on-clickoutside="onClickoutside"
+      @select="handleDropdownSelect"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { RefreshOutline, AddOutline, InformationCircleOutline, EllipsisHorizontalOutline, TrashOutline } from '@vicons/ionicons5'
+import { RefreshOutline, AddOutline, InformationCircleOutline, TrashOutline } from '@vicons/ionicons5'
 import { useRoomStore } from '@/lib/store/room'
 import { NTag, NDropdown, NButton, NIcon } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -225,6 +240,7 @@ const singleFormRef = ref<FormInst | null>(null)
 const showDetail = ref(false)
 const selectedRoom = ref<RoomData | null>(null)
 let updateTimer: number | null = null
+const dataTableRef = ref(null)
 
 const { loading: serverLoading } = storeToRefs(serverStore)
 const { loading: roomLoading } = storeToRefs(roomStore)
@@ -235,18 +251,15 @@ const canAddServer = computed(() => {
   return authStore.isAuthenticated && !authStore.loading
 })
 
-// 添加排序相关的状态变量
+// 排序变量
 const sortConfig = ref({
-  key: '', // 默认无排序
-  order: 'asc'    // 默认升序
+  key: '',
+  order: 'asc'
 })
 
-// 添加一个函数来解析主机地址，提取域名/IP和端口
+// 提取域名/IP和端口
 const parseHostPort = (url: string) => {
-  // 移除 http:// 或 https://
   let hostPart = url.replace(/^https?:\/\//, '');
-  
-  // 分割域名/IP和端口
   const parts = hostPart.split(':');
   const host = parts[0];
   const port = parts.length > 1 ? parseInt(parts[1], 10) : NaN;
@@ -254,36 +267,29 @@ const parseHostPort = (url: string) => {
   return { host, port };
 }
 
-// 修改 filteredServerData 计算属性中的排序逻辑
+// 排序逻辑
 const filteredServerData = computed(() => {
   const filteredData = serverStore.serverStats
     .filter((server: RecServer & { totalRooms?: number; streamingRooms?: number; recordingRooms?: number }) => 
       serverFilter.value === 'all' || server.recType === serverFilter.value
     )
-  
-  // 如果没有设置排序字段，则返回原始数据
   if (!sortConfig.value.key) {
     return filteredData;
   }
   
-  // 根据排序配置进行排序
+  // 排序配置
   return filteredData.sort((a: any, b: any) => {
-    // 值可能不存在，做好空值处理
     const valueA = a[sortConfig.value.key] ?? '';
     const valueB = b[sortConfig.value.key] ?? '';
     
-    // 对 recHost 进行特殊处理，分离主机名和端口号
+    // 分离ip/域和端口
     if (sortConfig.value.key === 'recHost') {
       const hostA = parseHostPort(valueA);
       const hostB = parseHostPort(valueB);
-      
-      // 先比较主机名
       const hostCompare = hostA.host.localeCompare(hostB.host);
       if (hostCompare !== 0) {
         return sortConfig.value.order === 'asc' ? hostCompare : -hostCompare;
       }
-      
-      // 如果主机名相同，按端口号数值比较
       if (!isNaN(hostA.port) && !isNaN(hostB.port)) {
         return sortConfig.value.order === 'asc' 
           ? hostA.port - hostB.port 
@@ -291,14 +297,11 @@ const filteredServerData = computed(() => {
       }
     }
     
-    // 不同类型的值需要不同的比较方式
     if (typeof valueA === 'string' && typeof valueB === 'string') {
-      // 字符串比较
       return sortConfig.value.order === 'asc' 
         ? valueA.localeCompare(valueB) 
         : valueB.localeCompare(valueA);
     } else {
-      // 数值比较
       const numA = Number(valueA) || 0;
       const numB = Number(valueB) || 0;
       return sortConfig.value.order === 'asc' ? numA - numB : numB - numA;
@@ -348,7 +351,7 @@ const getHostname = (url: string) => {
 const getRowClassName = (row: RecServer & { recordingRooms?: number; streamingRooms?: number }): string => {
   if (!row) return ''
   
-  // 将对象转换为字符串类名
+  // 对象转换字符串
   const classObj = {
     'is-recording': row.recordingRooms && row.recordingRooms > 0,
     'is-streaming': row.streamingRooms && row.streamingRooms > 0,
@@ -356,42 +359,75 @@ const getRowClassName = (row: RecServer & { recordingRooms?: number; streamingRo
     'is-error': row.recStatus === 'error'
   }
   
-  // 将活跃的类名合并为空格分隔的字符串
   return Object.entries(classObj)
     .filter(([_, value]) => value)
     .map(([key]) => key)
     .join(' ')
 }
 
-// 修改排序处理函数，改成三态切换
+// 排序处理
 const handleSortChange = (key: string) => {
   if (sortConfig.value.key === key) {
-    // 同一字段，切换排序顺序：升序 -> 降序 -> 无排序
+    // 切换排序顺序：升序 -> 降序 -> 无排序
     if (sortConfig.value.order === 'asc') {
       sortConfig.value.order = 'desc';
     } else if (sortConfig.value.order === 'desc') {
-      // 清除排序
       sortConfig.value.key = '';
     } else {
-      // 从无排序切换到升序
       sortConfig.value.order = 'asc';
     }
   } else {
-    // 不同字段，设置为升序
+    // 不同字段，设置升序
     sortConfig.value.key = key;
     sortConfig.value.order = 'asc';
   }
 }
 
-// 修改辅助函数：获取排序图标
+// 排序图标
 const getSortIcon = (key: string) => {
   if (sortConfig.value.key !== key) {
-    return '○'; // 未排序
+    return '○';
   }
   return sortConfig.value.order === 'asc' ? '▲' : '▼'; // 升序/降序
 }
 
-// 修改 columns 定义，添加排序功能
+const showDropdown = ref(false)
+const x = ref(0)
+const y = ref(0)
+const currentServer = ref<RecServer | null>(null)
+
+// 修改右键菜单选项，添加认证检查
+const dropdownOptions = computed(() => {
+  const options = []
+  
+  if (authStore.isAuthenticated) {
+    options.push({
+      label: '删除',
+      key: 'delete',
+      icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+      props: {
+        class: 'dropdown-danger-item'
+      }
+    })
+  }
+  
+  return options
+})
+
+// 行属性，添加contextmenu事件
+const getRowProps = (row: RecServer) => {
+  return {
+    onClick: () => {
+      // 可以添加行点击事件
+    },
+    style: 'cursor: default;',
+    onContextmenu: (e: MouseEvent) => {
+      handleContextMenu(e, row)
+    }
+  }
+}
+
+// 修改 columns 数组，删除最后一列操作列
 const columns: DataTableColumns<RecServer & { totalRooms?: number; streamingRooms?: number; recordingRooms?: number }> = [
   {
     title: () => h('div', { 
@@ -563,43 +599,6 @@ const columns: DataTableColumns<RecServer & { totalRooms?: number; streamingRoom
       return h('span', {
         class: { 'highlight': row.recordingRooms && row.recordingRooms > 0 }
       }, row.recordingRooms || 0)
-    }
-  },
-  {
-    title: '操作',
-    key: 'actions',
-    width: 80,
-    align: 'center',
-    fixed: 'right',
-    render(row) {
-      return h(
-        NDropdown,
-        {
-          trigger: 'click',
-          options: [
-            {
-              label: '删除录播机',
-              key: 'delete',
-              icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
-              props: {
-                class: 'dropdown-danger-item'
-              }
-            }
-          ],
-          onSelect: (key: string) => handleActionSelect(key, row)
-        },
-        {
-          default: () => h(
-            NButton,
-            {
-              quaternary: true,
-              circle: true,
-              size: 'small'
-            },
-            { default: () => h(NIcon, null, { default: () => h(EllipsisHorizontalOutline) }) }
-          )
-        }
-      )
     }
   }
 ]
@@ -868,23 +867,42 @@ const handleRoomDeleted = () => {
   console.log('房间已删除')
 }
 
-const handleActionSelect = (key: string, row: RecServer) => {
-  if (key === 'delete') {
-    confirmDeleteServer(row)
-  }
-}
-
-const confirmDeleteServer = (server: RecServer) => {
-  dialog.warning({
-    title: '确认删除',
-    content: `确定要删除录播机 "${server.recName}" 吗？此操作不可撤销，且会导致该录播机下的所有房间记录被删除。`,
-    positiveText: '确定删除',
-    negativeText: '取消',
-    onPositiveClick: () => deleteServerHandler(server)
+// 右键菜单处理
+const handleContextMenu = (e: MouseEvent, row: RecServer) => {
+  e.preventDefault()
+  e.stopPropagation()
+  
+  // 未登录不显示
+  if (!authStore.isAuthenticated) return
+  
+  currentServer.value = row
+  showDropdown.value = false
+  nextTick().then(() => {
+    showDropdown.value = true
+    x.value = e.clientX
+    y.value = e.clientY
   })
 }
 
-const deleteServerHandler = async (server: RecServer) => {
+// 右键点击
+const handleContainerContextMenu = (e: MouseEvent) => {
+  e.preventDefault()
+}
+
+// 处理菜单项选择
+const handleDropdownSelect = (key: string) => {
+  showDropdown.value = false
+  if (key === 'delete' && currentServer.value) {
+    confirmDeleteServer(currentServer.value)
+  }
+}
+
+// 点击外部关闭菜单
+const onClickoutside = () => {
+  showDropdown.value = false
+}
+
+const confirmDeleteServer = async (server: RecServer) => {
   try {
     message.loading('正在删除录播机...')
     await deleteServers([{
@@ -1024,5 +1042,15 @@ html.dark {
   &:hover {
     color: var(--n-primary-color);
   }
+}
+
+// 添加右键菜单样式
+.dropdown-danger-item {
+  color: var(--n-error-color);
+}
+
+// 添加行样式，使其可以右键点击
+.n-data-table-tr {
+  cursor: default;
 }
 </style> 

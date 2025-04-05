@@ -1,12 +1,13 @@
 __pycache__
 .pyc
 .vscode
-
 node_modules
 logs
 web
 Build
+dist
 * copy.*
 .gitignore
+
 config.yaml
 config2.yaml
