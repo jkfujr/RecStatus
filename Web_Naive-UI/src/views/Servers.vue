@@ -106,6 +106,14 @@
                 </n-text>
               </template>
             </n-form-item>
+            <n-form-item label="隐藏URL" path="urlHidden">
+              <n-switch v-model:value="singleFormModel.urlHidden" />
+              <template #help>
+                <n-text depth="3">
+                  启用后仅在服务器看到真实地址，前端显示为"已隐藏"
+                </n-text>
+              </template>
+            </n-form-item>
             <n-form-item v-if="singleFormModel.recType === 'recheme'" label="启用管理" path="manage">
               <n-switch v-model:value="singleFormModel.manage" />
               <template #help>
@@ -155,7 +163,18 @@
             <template #icon>
               <n-icon><InformationCircleOutline /></n-icon>
             </template>
-            请按照以下JSON格式输入录播机信息，可以同时添加多个录播机。
+            请按照以下JSON格式输入录播机信息，可以同时添加多个录播机。<br/>
+            支持的字段：
+            <ul>
+              <li><strong>recType</strong>: 录播机类型，必填，recheme或blrec</li>
+              <li><strong>recName</strong>: 录播机名称，必填，全局唯一</li>
+              <li><strong>url</strong>: 录播机地址，必填，需以http://或https://开头</li>
+              <li><strong>manage</strong>: 是否启用管理，可选，默认true</li>
+              <li><strong>basic</strong>: 是否启用认证，可选</li>
+              <li><strong>basicUser/basicPass</strong>: 录播姬认证用户名/密码，当basic=true时有效</li>
+              <li><strong>basicKey</strong>: BLREC认证密钥，当recType=blrec且basic=true时有效</li>
+              <li><strong>url_hidden</strong>: 是否隐藏URL，可选，默认false</li>
+            </ul>
           </n-alert>
           <n-space vertical>
             <n-button @click="fillBatchExampleData" size="small">填充示例数据</n-button>
@@ -336,6 +355,8 @@ onUnmounted(() => {
 })
 
 const getHostname = (url: string) => {
+  if (url === '已隐藏') return url
+  
   try {
     const urlObj = new URL(url)
     return urlObj.port ? `${urlObj.hostname}:${urlObj.port}` : urlObj.hostname
@@ -493,6 +514,12 @@ const columns: DataTableColumns<RecServer> = [
     width: 280,
     align: 'center',
     render(row) {
+      if (row.recHost === '已隐藏') {
+        return h('span', { 
+          class: 'url-text hidden-url',
+          title: '该URL已被隐藏'
+        }, '已隐藏')
+      }
       return h('span', { class: 'url-text' }, getHostname(row.recHost))
     }
   },
@@ -609,7 +636,8 @@ const singleFormModel = ref({
   authType: 'global',
   basicUser: '',
   basicPass: '',
-  basicKey: ''
+  basicKey: '',
+  urlHidden: false
 })
 
 // 批量添加表单模型
@@ -684,7 +712,8 @@ function fillBatchExampleData() {
       recName: "录播机名字11",
       url: "http://192.168.1.100:2356",
       manage: true,
-      basic: false
+      basic: false,
+      url_hidden: false
     },
     {
       recType: "recheme",
@@ -693,20 +722,23 @@ function fillBatchExampleData() {
       manage: true,
       basic: true,
       basicUser: "admin",
-      basicPass: "password123"
+      basicPass: "password123",
+      url_hidden: true
     },
     {
       recType: "blrec",
       recName: "录播机名字51",
       url: "http://192.168.1.200:2233",
-      basic: false
+      basic: false,
+      url_hidden: false
     },
     {
       recType: "blrec",
       recName: "录播机名字4",
       url: "http://192.168.1.201:2233",
       basic: true,
-      basicKey: "custom_secret_key"
+      basicKey: "custom_secret_key",
+      url_hidden: true
     }
   ], null, 2)
 }
@@ -722,6 +754,7 @@ async function handleAddSingleServer() {
       recName: singleFormModel.value.recName,
       url: singleFormModel.value.url,
       manage: singleFormModel.value.manage,
+      url_hidden: singleFormModel.value.urlHidden,
       ...(singleFormModel.value.authType === 'basic' && {
         basic: true,
         basicUser: singleFormModel.value.basicUser,
@@ -828,7 +861,8 @@ function resetForms() {
     authType: 'global',
     basicUser: '',
     basicPass: '',
-    basicKey: ''
+    basicKey: '',
+    urlHidden: false
   }
   batchFormModel.value.servers = ''
 }
@@ -897,17 +931,25 @@ const onClickoutside = () => {
 }
 
 const confirmDeleteServer = async (server: RecServer) => {
-  try {
-    message.loading('正在删除录播机...')
-    await deleteServers([{
-      recName: server.recName,
-      recType: server.recType
-    }])
-    message.success(`录播机 "${server.recName}" 已成功删除`)
-    handleRefresh()
-  } catch (error) {
-    message.error(`删除失败: ${(error as Error).message}`)
-  }
+  dialog.warning({
+    title: '确认删除',
+    content: `确定要删除录播机 "${server.recName}" 吗？此操作不可恢复。`,
+    positiveText: '确认删除',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        message.loading('正在删除录播机...')
+        await deleteServers([{
+          recName: server.recName,
+          recType: server.recType
+        }])
+        message.success(`录播机 "${server.recName}" 已成功删除`)
+        handleRefresh()
+      } catch (error) {
+        message.error(`删除失败: ${(error as Error).message}`)
+      }
+    }
+  })
 }
 
 // TODO
@@ -1006,6 +1048,14 @@ html.dark {
   .url-text {
     color: var(--text-color-secondary);
     font-family: monospace;
+    
+    &.hidden-url {
+      color: var(--n-warning-color);
+      font-style: italic;
+      background-color: rgba(var(--warning-color), 0.1);
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
   }
 }
 

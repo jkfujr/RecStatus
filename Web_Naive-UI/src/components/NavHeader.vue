@@ -33,24 +33,40 @@
       @select="handleDropdownSelect"
     />
     
-    <n-modal v-model:show="showLoginModal" preset="dialog" title="登录">
-      <template #header>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <n-icon><LockClosedOutline /></n-icon>
+    <n-modal 
+      v-model:show="showLoginModal" 
+      preset="card"
+      class="login-modal"
+      style="width: 360px;"
+      :mask-closable="false"
+      :title="''"
+      size="small"
+      :bordered="false"
+    >
+      <div class="login-header">
+        <div class="login-title">
+          <n-icon size="24" color="var(--n-primary-color)"><LockClosedOutline /></n-icon>
           <span>登录</span>
         </div>
-      </template>
+      </div>
       
       <n-form
         ref="loginForm"
         :model="loginModel"
         :rules="loginRules"
-        label-placement="left"
-        label-width="80"
-        style="max-width: 300px; margin: 0 auto;"
+        label-placement="top"
+        size="medium"
       >
         <n-form-item label="用户名" path="username">
-          <n-input v-model:value="loginModel.username" placeholder="请输入用户名" />
+          <n-input 
+            v-model:value="loginModel.username" 
+            placeholder="请输入用户名"
+            clearable
+          >
+            <template #prefix>
+              <n-icon><PersonOutline /></n-icon>
+            </template>
+          </n-input>
         </n-form-item>
         <n-form-item label="密码" path="password">
           <n-input 
@@ -59,16 +75,32 @@
             placeholder="请输入密码"
             show-password-on="click"
             @keyup.enter="handleLogin"
-          />
+          >
+            <template #prefix>
+              <n-icon><KeyOutline /></n-icon>
+            </template>
+          </n-input>
         </n-form-item>
+        
+        <div style="margin-top: 24px;">
+          <n-button 
+            type="primary" 
+            block 
+            :loading="loginLoading" 
+            @click="handleLogin"
+            style="margin-bottom: 12px;"
+          >
+            登录
+          </n-button>
+          <n-button 
+            block 
+            quaternary 
+            @click="showLoginModal = false"
+          >
+            取消
+          </n-button>
+        </div>
       </n-form>
-      
-      <template #action>
-        <n-space justify="end">
-          <n-button @click="showLoginModal = false">取消</n-button>
-          <n-button type="primary" :loading="loginLoading" @click="handleLogin">登录</n-button>
-        </n-space>
-      </template>
     </n-modal>
   </div>
 </template>
@@ -77,7 +109,7 @@
 import { Moon, Sunny } from '@vicons/ionicons5'
 import { useThemeStore } from '@/lib/store/theme'
 import { useAuthStore } from '@/lib/store/auth'
-import { LockClosedOutline, LogOutOutline, LogInOutline } from '@vicons/ionicons5'
+import { LockClosedOutline, LogOutOutline, LogInOutline, PersonOutline, KeyOutline } from '@vicons/ionicons5'
 import { useMessage } from 'naive-ui'
 import type { FormInst } from 'naive-ui'
 
@@ -251,4 +283,28 @@ async function handleLogin() {
 html.dark .logo-text {
   color: var(--text-color);
 }
-</style> 
+
+.login-modal :deep(.n-card-header) {
+  display: none;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.login-subtitle {
+  font-size: 14px;
+  color: var(--n-text-color-3);
+}
+</style>

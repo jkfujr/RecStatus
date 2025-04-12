@@ -25,30 +25,42 @@ AUTH:
 
 # 录播姬
 RECHEME:
-  # (可选)录播姬全局设置 是否启用录播姬认证。默认 false
+  # (可选) 隐藏API输出 URL 地址
+  # 默认 false
+  URL_HIDDEN: false
+  # (可选)录播姬全局设置 是否启用录播姬认证
   # 默认 false
   BASIC: false
-  # (可选)录播姬全局设置 录播姬认证账号密码。默认 空
+  # (可选)录播姬全局设置 录播姬认证账号密码
   # 默认 空
   BASIC_USER: ""
   BASIC_PASS: ""
+
 
   # 名称，没有限制
   REC001:
     # 录播姬地址
     - URL: http://114.51.41.91:9810
-      # (可选) 是否启用认证，如果没有就使用 RECHEME 全局设置
+      # (可选) 隐藏API输出 URL 地址
+      # 默认 使用 RECHEME 全局设置
+      URL_HIDDEN: true
+      # (可选) 是否启用认证
+      # 默认 使用 RECHEME 全局设置
       BASIC: true
-      # (可选) 认证账号密码，如果没有就使用 RECHEME 全局设置
+      # (可选) 认证账号密码
+      # 默认 使用 RECHEME 全局设置
       BASIC_USER: "admin"
       BASIC_PASS: "admin"
 
 # BLREC
 BLREC:
-  # (可选)BLREC全局设置 是否启用BLREC认证。默认 true
+  # (可选) 隐藏API输出 URL 地址
+  # 默认 false
+  URL_HIDDEN: false
+  # (可选)BLREC全局设置 是否启用BLREC认证
   # 默认 true
   BASIC: true
-  # (可选)BLREC全局设置 BLREC认证账号密码。默认 bili2233
+  # (可选)BLREC全局设置 BLREC认证账号密码
   # 默认 bili2233
   BASIC_KEY: "bili2233"
 
@@ -56,7 +68,9 @@ BLREC:
   REC101:
     # BLREC地址
     - URL: https://114514.com:1919
-      # (可选) 是否启用认证，如果没有就使用 BLREC 全局设置
+      # (可选) 是否启用认证
+      # 默认 使用 BLREC 全局设置
       BASIC: true
-      # (可选) 认证KEY，如果没有就使用 BLREC 全局设置
+      # (可选) 认证KEY
+      # 默认 使用 BLREC 全局设置
       BASIC_KEY: "88888888"

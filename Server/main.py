@@ -112,6 +112,7 @@ class AddServerRequest(BaseModel):
     basicUser: str = None
     basicPass: str = None
     basicKey: str = None
+    url_hidden: bool = False
 
     class Config:
         populate_by_name = True
@@ -240,6 +241,9 @@ async def get_all_recservers() -> List[RecServerInfo]:
                     host = api_info.get("URL", "").rstrip('/')
                     manage = api_info.get("MANAGE", True)
                     
+                    # 获取显示用的主机地址
+                    display_host = get_server_display_host(api_info, "recheme")
+                    
                     # 获取统计数据
                     stats = server_room_stats.get(("recheme", rec_name), {"total": 0, "streaming": 0, "recording": 0})
                     
@@ -250,7 +254,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                             servers.append(RecServerInfo(
                                 recName=rec_name,
                                 recType="recheme",
-                                recHost=host,
+                                recHost=display_host,
                                 recStatus="online",
                                 recManage=manage,
                                 totalRooms=stats["total"],
@@ -261,7 +265,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                             servers.append(RecServerInfo(
                                 recName=rec_name,
                                 recType="recheme",
-                                recHost=host,
+                                recHost=display_host,
                                 recStatus="offline",
                                 recManage=manage,
                                 totalRooms=stats["total"],
@@ -273,7 +277,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                         servers.append(RecServerInfo(
                             recName=rec_name,
                             recType="recheme",
-                            recHost=host,
+                            recHost=display_host,
                             recStatus="error",
                             recManage=manage,
                             totalRooms=stats["total"],
@@ -288,7 +292,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                     host = api_info.get("URL", "").rstrip('/')
                     manage = api_info.get("MANAGE", True)
                     
-                    # 获取统计数据
+                    display_host = get_server_display_host(api_info, "blrec")
                     stats = server_room_stats.get(("blrec", rec_name), {"total": 0, "streaming": 0, "recording": 0})
                     
                     try:
@@ -298,7 +302,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                             servers.append(RecServerInfo(
                                 recName=rec_name,
                                 recType="blrec",
-                                recHost=host,
+                                recHost=display_host,
                                 recStatus="online",
                                 recManage=manage,
                                 totalRooms=stats["total"],
@@ -309,7 +313,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                             servers.append(RecServerInfo(
                                 recName=rec_name,
                                 recType="blrec",
-                                recHost=host,
+                                recHost=display_host,
                                 recStatus="offline",
                                 recManage=manage,
                                 totalRooms=stats["total"],
@@ -321,7 +325,7 @@ async def get_all_recservers() -> List[RecServerInfo]:
                         servers.append(RecServerInfo(
                             recName=rec_name,
                             recType="blrec",
-                            recHost=host,
+                            recHost=display_host,
                             recStatus="error",
                             recManage=manage,
                             totalRooms=stats["total"],
@@ -382,6 +386,19 @@ def handle_operation_error(operation: str, recType: str, recName: str = None, us
         return f"{user_info}在{recType}录播机 {recName} 中{base_msg}"
     return f"{user_info}{base_msg}"
 
+def get_server_display_host(api_info: Dict, rec_type: str) -> str:
+    """
+    获取显示用的服务器地址，考虑URL_HIDDEN配置
+    
+    :param api_info: API配置信息
+    :param rec_type: 录播机类型 (recheme 或 blrec)
+    :return: 显示用的地址，如果URL_HIDDEN为True则返回"已隐藏"
+    """
+    host = api_info.get("URL", "").rstrip('/')
+    url_hidden = api_info.get("URL_HIDDEN", 
+                            config.get(rec_type.upper(), {}).get("URL_HIDDEN", False))
+    return "已隐藏" if url_hidden else host
+
 @app.get("/api/room")
 async def get_rooms(recType: str = None):
     """API_获取所有直播间信息"""
@@ -395,14 +412,26 @@ async def get_rooms(recType: str = None):
             if isinstance(api_info_list, list):
                 for api_info in api_info_list:
                     recheme = create_recheme_instance(api_info, rec_name)
-                    rooms.extend(recheme.get_rooms())
+                    recheme_rooms = recheme.get_rooms()
+                    display_host = get_server_display_host(api_info, "recheme")
+                    for room in recheme_rooms:
+                        if "recServer" in room:
+                            room["recServer"]["recHost"] = display_host
+                    
+                    rooms.extend(recheme_rooms)
     
     if (not recType or recType == "blrec") and "BLREC" in config:
         for rec_name, api_info_list in config["BLREC"].items():
             if isinstance(api_info_list, list) and rec_name not in ["BLREC_BASIC", "BLREC_BASIC_KEY"]:
                 for api_info in api_info_list:
                     blrec = create_blrec_instance(api_info, rec_name)
-                    rooms.extend(blrec.get_rooms())
+                    blrec_rooms = blrec.get_rooms()
+                    display_host = get_server_display_host(api_info, "blrec")
+                    for room in blrec_rooms:
+                        if "recServer" in room:
+                            room["recServer"]["recHost"] = display_host
+                    
+                    rooms.extend(blrec_rooms)
 
     return rooms
 
@@ -487,6 +516,9 @@ async def _create_single_room(request: CreateRoomRequest, recType: str = None, r
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.create_room(request.roomId, request.autoRecord)
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
     
     if (not recType or recType == "blrec") and "BLREC" in config:
@@ -499,6 +531,9 @@ async def _create_single_room(request: CreateRoomRequest, recType: str = None, r
                     blrec = create_blrec_instance(api_info, rec_name)
                     result = blrec.create_room(request.roomId)
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "blrec")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
     
     if not success_results:
@@ -590,12 +625,13 @@ async def _delete_single_room(roomId: int, recType: str = None, recName: str = N
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.delete_room(roomId)
                     if result:
+                        display_host = get_server_display_host(api_info, "recheme")
                         success_results.append({
                             "roomid": roomId,
                             "recServer": {
                                 "recName": rec_name,
                                 "recType": "recheme",
-                                "recHost": api_info["URL"],
+                                "recHost": display_host,
                                 "recManage": api_info.get("MANAGE", True)
                             }
                         })
@@ -610,12 +646,13 @@ async def _delete_single_room(roomId: int, recType: str = None, recName: str = N
                     blrec = create_blrec_instance(api_info, rec_name)
                     result = blrec.delete_room(str(roomId))
                     if result is not None:
+                        display_host = get_server_display_host(api_info, "blrec")
                         success_results.append({
                             "roomid": roomId,
                             "recServer": {
                                 "recName": rec_name,
                                 "recType": "blrec",
-                                "recHost": api_info["URL"],
+                                "recHost": display_host,
                                 "recManage": api_info.get("MANAGE", True)
                             }
                         })
@@ -642,6 +679,9 @@ async def get_room_by_id(roomId: int, recType: str = None):
                     recheme = create_recheme_instance(api_info, rec_name)
                     data = recheme.get_room(roomId)
                     if data:
+                        if "recServer" in data:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            data["recServer"]["recHost"] = display_host
                         room_data.append(data)
     
     if recType in [None, "blrec"] and "BLREC" in config:
@@ -651,6 +691,9 @@ async def get_room_by_id(roomId: int, recType: str = None):
                     blrec = create_blrec_instance(api_info, rec_name)
                     data = blrec.get_room(str(roomId))
                     if data:
+                        if "recServer" in data:
+                            display_host = get_server_display_host(api_info, "blrec")
+                            data["recServer"]["recHost"] = display_host
                         room_data.append(data)
 
     if not room_data:
@@ -691,6 +734,9 @@ async def update_room_config(
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.update_room_config(roomId, request.dict())
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
     
     if not success_results:
@@ -726,6 +772,9 @@ async def start_room_recording(
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.start_recording(roomId)
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
 
     if not success_results:
@@ -761,6 +810,9 @@ async def stop_room_recording(
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.stop_recording(roomId)
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
     
     if not success_results:
@@ -796,6 +848,9 @@ async def split_room_recording(
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.split_recording(roomId)
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
     
     if not success_results:
@@ -831,6 +886,9 @@ async def refresh_room(
                     recheme = create_recheme_instance(api_info, rec_name)
                     result = recheme.refresh_room(roomId)
                     if result:
+                        if "recServer" in result:
+                            display_host = get_server_display_host(api_info, "recheme")
+                            result["recServer"]["recHost"] = display_host
                         success_results.append(result)
     
     if not success_results:
@@ -864,6 +922,9 @@ async def _add_single_server(request: AddServerRequest, save_immediately: bool =
     if request.manage is not True:
         server_config["MANAGE"] = request.manage
     
+    if hasattr(request, 'url_hidden') and request.url_hidden:
+        server_config["URL_HIDDEN"] = True
+    
     if request.recType == "recheme":
         if request.basic is not None:
             server_config["BASIC"] = request.basic
@@ -894,10 +955,12 @@ async def _add_single_server(request: AddServerRequest, save_immediately: bool =
     if save_immediately and not save_config(config):
         raise HTTPException(status_code=500, detail="保存配置文件失败")
     
+    display_host = "已隐藏" if hasattr(request, 'url_hidden') and request.url_hidden else request.url
+    
     response_data = {
         "recName": request.recName,
         "recType": request.recType,
-        "recHost": request.url,
+        "recHost": display_host,
         "recStatus": "未知",
         "recManage": request.manage
     }

@@ -7,7 +7,6 @@ web
 Build
 dist
 * copy.*
-.gitignore
-
+.*
 config.yaml
 config2.yaml
