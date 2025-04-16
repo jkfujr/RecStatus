@@ -292,6 +292,8 @@ export async function addServer(server: {
   basicUser?: string
   basicPass?: string
   basicKey?: string
+  url_hidden?: boolean
+  originalName?: string
 }) {
   try {
     if (!server.recType || !server.recName || !server.url) {
@@ -313,6 +315,10 @@ export async function addServer(server: {
       manage: server.manage !== undefined ? server.manage : true
     }
     
+    if (server.url_hidden !== undefined) {
+      payload.url_hidden = server.url_hidden
+    }
+    
     if (server.basic !== undefined) {
       payload.basic = server.basic
       
@@ -326,10 +332,14 @@ export async function addServer(server: {
       }
     }
     
+    if (server.originalName) {
+      payload.originalName = server.originalName
+    }
+    
     return await apiRequest('/api/server', {
       method: 'POST',
       body: payload,
-      errorMessage: '添加录播机失败'
+      errorMessage: server.originalName ? '更新录播机失败' : '添加录播机失败'
     })
   } catch (error) {
     console.error('Failed to add server:', error)

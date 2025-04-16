@@ -68,9 +68,9 @@
       </div>
     </n-scrollbar>
     
-    <n-modal v-model:show="showAddServerModal" preset="card" title="添加录播机" style="width: 600px">
+    <n-modal v-model:show="showAddServerModal" preset="card" :title="isEditMode ? '编辑录播机' : '添加录播机'" style="width: 600px">
       <n-tabs type="line" animated>
-        <n-tab-pane name="single" tab="单个添加">
+        <n-tab-pane name="single" :tab="isEditMode ? '编辑录播机' : '单个添加'">
           <n-form
             ref="singleFormRef"
             :model="singleFormModel"
@@ -153,7 +153,7 @@
           </n-form>
           <div class="action-btns">
             <n-button type="primary" @click="handleAddSingleServer" :loading="submitting">
-              添加
+              {{ isEditMode ? '保存' : '添加' }}
             </n-button>
           </div>
         </n-tab-pane>
@@ -231,7 +231,7 @@
 </template>
 
 <script setup lang="ts">
-import { RefreshOutline, AddOutline, InformationCircleOutline, TrashOutline } from '@vicons/ionicons5'
+import { RefreshOutline, AddOutline, InformationCircleOutline, TrashOutline, CreateOutline } from '@vicons/ionicons5'
 import { NTag, NDropdown, NButton, NIcon } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import type { RecServer, RoomData } from '@/lib/types/api'
@@ -252,6 +252,7 @@ const serverFilter = ref('all')
 const tableMaxHeight = ref(0)
 const tableWidth = ref(0)
 const showAddServerModal = ref(false)
+const isEditMode = ref(false)
 const submitting = ref(false)
 const singleFormRef = ref<FormInst | null>(null)
 const showDetail = ref(false)
@@ -414,11 +415,16 @@ const x = ref(0)
 const y = ref(0)
 const currentServer = ref<RecServer | null>(null)
 
-// 修改右键菜单选项，添加认证检查
+// 右键菜单
 const dropdownOptions = computed(() => {
   const options = []
   
   if (authStore.isAuthenticated) {
+    options.push({
+      label: '编辑',
+      key: 'edit',
+      icon: () => h(NIcon, null, { default: () => h(CreateOutline) })
+    })
     options.push({
       label: '删除',
       key: 'delete',
@@ -743,30 +749,58 @@ function fillBatchExampleData() {
   ], null, 2)
 }
 
-// 添加录播机
+// 填充编辑表单
+function fillEditForm(server: RecServer) {
+  isEditMode.value = true
+  singleFormModel.value = {
+    recType: server.recType,
+    recName: server.recName,
+    url: server.recHost,
+    manage: server.recManage,
+    authType: 'global',
+    basicUser: '',
+    basicPass: '',
+    basicKey: '',
+    urlHidden: server.recHost === '已隐藏'
+  }
+}
+
+// 添加或更新录播机
 async function handleAddSingleServer() {
   try {
     await singleFormRef.value?.validate()
     submitting.value = true
-    
     const serverData = {
       recType: singleFormModel.value.recType,
       recName: singleFormModel.value.recName,
       url: singleFormModel.value.url,
       manage: singleFormModel.value.manage,
       url_hidden: singleFormModel.value.urlHidden,
-      ...(singleFormModel.value.authType === 'basic' && {
-        basic: true,
-        basicUser: singleFormModel.value.basicUser,
-        basicPass: singleFormModel.value.basicPass
-      }),
-      ...(singleFormModel.value.authType === 'key' && {
-        basicKey: singleFormModel.value.basicKey
-      })
+    } as any
+
+    // 处理认证信息
+    if (singleFormModel.value.authType === 'enable') {
+      serverData.basic = true
+      if (singleFormModel.value.recType === 'recheme') {
+        serverData.basicUser = singleFormModel.value.basicUser
+        serverData.basicPass = singleFormModel.value.basicPass
+      } else if (singleFormModel.value.recType === 'blrec') {
+        serverData.basicKey = singleFormModel.value.basicKey
+      }
+    } else if (singleFormModel.value.authType === 'disable') {
+      serverData.basic = false
     }
     
-    const result = await addServer(serverData)
-    message.success(`成功添加录播机: ${result.data.recName}`)
+    if (isEditMode.value) {
+      const originalName = currentServer.value?.recName || ''
+      serverData.originalName = originalName
+      const result = await addServer(serverData)
+      message.success(`成功更新录播机: ${result.data.recName}`)
+    } else {
+      const result = await addServer(serverData)
+      message.success(`成功添加录播机: ${result.data.recName}`)
+    }
+    
     showAddServerModal.value = false
     resetForms()
     handleRefresh()
@@ -865,6 +899,7 @@ function resetForms() {
     urlHidden: false
   }
   batchFormModel.value.servers = ''
+  isEditMode.value = false
 }
 
 async function handleRefresh() {
@@ -920,7 +955,11 @@ const handleContainerContextMenu = (e: MouseEvent) => {
 // 处理菜单项选择
 const handleDropdownSelect = (key: string) => {
   showDropdown.value = false
-  if (key === 'delete' && currentServer.value) {
+  if (key === 'edit' && currentServer.value) {
+    isEditMode.value = true
+    fillEditForm(currentServer.value)
+    showAddServerModal.value = true
+  } else if (key === 'delete' && currentServer.value) {
     confirmDeleteServer(currentServer.value)
   }
 }
@@ -960,6 +999,12 @@ const showRoomDetail = (room: RoomData) => {
     showDetail.value = true
   })
 }
+
+watch(() => showAddServerModal.value, (newVal) => {
+  if (!newVal) {
+    resetForms()
+  }
+})
 </script>
 
 <style scoped lang="scss">

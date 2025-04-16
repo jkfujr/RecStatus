@@ -48,6 +48,7 @@ class AddServerRequest(BaseModel):
     basicPass: Optional[str] = None
     basicKey: Optional[str] = None
     url_hidden: bool = False
+    originalName: Optional[str] = None
 
     class Config:
         populate_by_name = True

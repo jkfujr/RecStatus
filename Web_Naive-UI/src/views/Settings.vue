@@ -3,7 +3,7 @@
     <n-card title="设置">
       <n-space vertical>
         <n-alert type="info">
-          设置页面正在开发中...
+          在写了
         </n-alert>
       </n-space>
     </n-card>
