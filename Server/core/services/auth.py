@@ -1,10 +1,11 @@
 import jwt
-from typing import Optional
-from fastapi import HTTPException, Depends, Request
+from typing import Optional, Dict
+from fastapi import HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from datetime import datetime, timedelta
+
 from core.logs import log
-from functools import wraps
+from core.dependencies import get_config, get_auth
 
 logger = log()
 
@@ -67,30 +68,37 @@ class Auth:
         
 auth_scheme = HTTPBearer(auto_error=False)
 
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_scheme)) -> str:
-    """验证用户"""
-    from main import config, auth
-    
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme),
+    config: Dict = Depends(get_config), 
+    auth_service: Auth = Depends(get_auth) # This needs Auth class itself
+) -> str:
+    """
+    验证用户凭据并返回用户名。
+    如果认证未启用，返回 'anonymous'。
+    如果认证已启用但凭据无效或缺失，则引发 HTTPException。
+    """
+    # This function relies on the Auth class being available in this scope, which is correct.
+    # It also depends on get_config and get_auth from dependencies.py, which is fine.
     if not config.get("AUTH", {}).get("ENABLE", False):
         return "anonymous"
     
     if not credentials:
-        raise HTTPException(status_code=401, detail="认证头缺失")
+        raise HTTPException(
+            status_code=401, 
+            detail="认证头缺失",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
         
-    username = auth.verify_token(credentials.credentials)
+    if not auth_service:
+        logger.error("[Auth] 依赖注入的 auth_service 为空")
+        raise HTTPException(status_code=500, detail="认证服务不可用")
+        
+    username = auth_service.verify_token(credentials.credentials)
     if not username:
-        raise HTTPException(status_code=401, detail="认证失败")
-    return username
-
-def requires_auth(func):
-    @wraps(func)
-    async def wrapper(*args, **kwargs):
-        from main import config
-        
-        if not config.get("AUTH", {}).get("ENABLE", False):
-            return await func(*args, **kwargs)
-            
-        if not kwargs.get("current_user"):
-            raise HTTPException(status_code=401, detail="需要认证")
-        return await func(*args, **kwargs)
-    return wrapper 
+        raise HTTPException(
+            status_code=401, 
+            detail="无效的 Token 或认证失败",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return username 

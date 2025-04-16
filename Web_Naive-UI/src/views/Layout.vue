@@ -33,14 +33,14 @@
 
 <script setup lang="ts">
 import NavHeader from '@/components/NavHeader.vue'
-import { AnalyticsOutline, VideocamOutline, ServerOutline, ChevronForward, ChevronBack } from '@vicons/ionicons5'
+import { AnalyticsOutline, VideocamOutline, ServerOutline, ChevronForward, ChevronBack, SettingsOutline } from '@vicons/ionicons5'
 import { useRoute, useRouter } from 'vue-router'
 import type { MenuOption } from 'naive-ui'
 import { ref, computed, h } from 'vue'
 
 const route = useRoute()
 const router = useRouter()
-const isCollapse = ref(false)
+const isCollapse = ref(true)
 
 const menuOptions: MenuOption[] = [
   {
@@ -57,6 +57,11 @@ const menuOptions: MenuOption[] = [
     label: '录播机列表',
     key: '/servers',
     icon: () => h(ServerOutline)
+  },
+  {
+    label: '设置',
+    key: '/settings',
+    icon: () => h(SettingsOutline)
   }
 ]
 
