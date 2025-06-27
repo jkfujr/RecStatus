@@ -80,5 +80,7 @@ template: |
   ## 更新内容 $RESOLVED_VERSION
   $CHANGES
   
+  - [web_naive-ui_dist.zip]() (SHA256: ${{ steps.hash.outputs.hash }})
+  
   ### 贡献者
   $CONTRIBUTORS

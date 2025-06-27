@@ -10,3 +10,4 @@ dist
 .*
 config.yaml
 config2.yaml
+@eaDir/
