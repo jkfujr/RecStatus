@@ -47,14 +47,31 @@ class DiskSpaceCheckHandler(TimedRotatingFileHandler):
     
     def _get_free_space(self):
         """获取日志文件所在磁盘的可用空间(MB)"""
+        if not self.baseFilename:
+            return 1000  # 无文件路径时返回安全值
+            
+        disk = os.path.dirname(os.path.abspath(self.baseFilename))
+        return _check_disk_space(disk)
+
+def _check_disk_space(directory):
+    """检查磁盘空间的通用函数"""
+    # 方法1: 使用os.statvfs (Unix/Linux通用)
+    if hasattr(os, 'statvfs'):
         try:
-            if self.baseFilename:
-                disk = os.path.dirname(os.path.abspath(self.baseFilename))
-                free_bytes = shutil.disk_usage(disk).free
-                return free_bytes / (1024 * 1024)
-            return 0
-        except Exception:
-            return 0
+            statvfs = os.statvfs(directory)
+            return (statvfs.f_frsize * statvfs.f_bavail) / (1024 * 1024)
+        except OSError:
+            pass
+    
+    # 方法2: 使用psutil (如果可用)
+    try:
+        import psutil
+        return psutil.disk_usage(directory).free / (1024 * 1024)
+    except (ImportError, OSError):
+        pass
+        
+    # 方法3: 返回安全值，避免阻塞
+    return 1000
 
 def log():
     """
@@ -85,12 +102,10 @@ def log():
     default_log_file_name = "BCK"
     log_file_path = os.path.join(log_directory, default_log_file_name)
 
-    try:
-        free_space_mb = shutil.disk_usage(log_directory).free / (1024 * 1024)
-        if free_space_mb < 100:
-            print(f"[警告] 日志目录所在磁盘空间不足: {free_space_mb:.2f}MB")
-    except Exception as e:
-        print(f"[警告] 检查磁盘空间失败: {e}")
+    # 检查磁盘空间
+    free_space_mb = _check_disk_space(log_directory)
+    if free_space_mb < 100:
+        print(f"[警告] 日志目录所在磁盘空间不足: {free_space_mb:.2f}MB")
 
     file_handler = DiskSpaceCheckHandler(
         log_file_path,
