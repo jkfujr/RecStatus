@@ -325,6 +325,7 @@ class CookieManager:
                                      timeout: int = 10, max_retries: int = 3) -> str | None:
         """
         从Cookie服务器获取Cookie，支持重试机制
+        优先尝试 v2 API，失败(404)则回退到 v1 API
         
         Args:
             server_url: Cookie服务器地址
@@ -339,143 +340,197 @@ class CookieManager:
         """
         headers = {}
         if token:
-            headers["token"] = token
-
-        target_url = ""
-        params = {}
-
+            headers["Authorization"] = f"Bearer {token}" # v2 规范
+            # v1 兼容: 有些旧服务可能仍检查 token header，保留以防万一，或者仅在 v1 fallback 时使用
+            # 但标准 v2 要求 Authorization。旧 v1 代码使用 headers["token"] = token
+        
         # 检查服务器健康状态
         health_key = f"{server_url}_{mode}"
         server_health = self._server_health[health_key]
         current_time = asyncio.get_event_loop().time()
         
-        # 如果服务器处于退避状态，检查是否可以恢复
         if server_health["backoff_until"] > current_time:
             backoff_remaining = round(server_health["backoff_until"] - current_time)
             logger.debug(f"[Cookie管理器] Cookie服务器 {server_url} 暂时不可用，{backoff_remaining}秒后重试")
             return None
 
-        # 构建请求参数
-        try:
-            if mode == "random":
-                target_url = urljoin(server_url, "/api/cookie/random")
-                params["type"] = "sim"
-            elif mode == "onlysync" and dede_user_id:
-                target_url = urljoin(server_url, "/api/cookie")
-                params["DedeUserID"] = dede_user_id
-            else:
-                logger.error(f"[Cookie管理器] 无效的模式或缺少DedeUserID")
-                return None
+        for retry in range(max_retries):
+            if retry > 0:
+                backoff_time = min(2 ** retry + random.uniform(0, 1), 60)
+                logger.warning(f"[Cookie管理器] 请求Cookie服务器超时/错误，第{retry}次重试，等待{backoff_time:.2f}秒...")
+                await asyncio.sleep(backoff_time)
+            
+            try:
+                # -------------------------------------------------------
+                # 尝试 v2 API
+                # -------------------------------------------------------
+                v2_url = ""
+                v2_params = {}
                 
-            # 实现重试机制
-            for retry in range(max_retries):
-                if retry > 0:
-                    # 指数退避等待
-                    backoff_time = min(2 ** retry + random.uniform(0, 1), 60)
-                    logger.warning(f"[Cookie管理器] 请求Cookie服务器超时，第{retry}次重试，等待{backoff_time:.2f}秒...")
-                    await asyncio.sleep(backoff_time)
-                
+                if mode == "random":
+                    v2_url = urljoin(server_url, "/api/v1/cookies/random")
+                    v2_params["format"] = "simple"
+                elif mode == "onlysync" and dede_user_id:
+                    v2_url = urljoin(server_url, f"/api/v1/cookies/{dede_user_id}")
+                else:
+                    logger.error(f"[Cookie管理器] 无效的模式或缺少DedeUserID")
+                    return None
+
                 try:
-                    async with self.session.get(target_url, headers=headers, params=params, timeout=timeout) as response:
+                    async with self.session.get(v2_url, headers=headers, params=v2_params, timeout=timeout) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            
+                            # 解析 v2 响应
+                            cookie_str = None
+                            if mode == "random":
+                                # simple format: {"DedeUserID": "...", "header_string": "..."}
+                                cookie_str = data.get("header_string")
+                            elif mode == "onlysync":
+                                # full document: {"managed": {"header_string": "...", ...}, ...}
+                                managed = data.get("managed", {})
+                                cookie_str = managed.get("header_string")
+                                if not cookie_str:
+                                    # 尝试从顶层获取 (以防万一)
+                                    cookie_str = data.get("header_string")
+
+                            if cookie_str:
+                                self._reset_server_health(health_key)
+                                return cookie_str
+                            else:
+                                logger.warning(f"[Cookie管理器] v2 API 响应缺少 header_string: {data}")
+                                # 这种情况下可能不是 API 版本问题，而是数据问题，但也可以尝试 v1 吗？
+                                # 暂时认为 v2 响应了 200 但没数据就是没数据
+                                return None
+                        
+                        elif response.status == 404:
+                            # 404 说明可能不支持 v2 API，回退到 v1
+                            logger.debug(f"[Cookie管理器] v2 API 返回 404，尝试回退到 v1 API")
+                            raise FileNotFoundError("v2 API not found") # 触发内部异常以跳转到 v1 逻辑
+                        else:
+                            # 其他错误 (500, 401 等)
+                            logger.warning(f"[Cookie管理器] v2 API 请求失败: {response.status}")
+                            response.raise_for_status() # 抛出异常进入重试或退出
+                
+                except FileNotFoundError:
+                    # -------------------------------------------------------
+                    # 回退 v1 API
+                    # -------------------------------------------------------
+                    # v1 使用 token header
+                    v1_headers = headers.copy()
+                    if token:
+                        v1_headers["token"] = token
+                        # v1 通常不强制 Authorization Bearer，但也可能兼容。保留 token header 是关键。
+                    
+                    v1_url = ""
+                    v1_params = {}
+                    
+                    if mode == "random":
+                        v1_url = urljoin(server_url, "/api/cookie/random")
+                        v1_params["type"] = "sim"
+                    elif mode == "onlysync" and dede_user_id:
+                        v1_url = urljoin(server_url, "/api/cookie")
+                        v1_params["DedeUserID"] = dede_user_id
+                    
+                    async with self.session.get(v1_url, headers=v1_headers, params=v1_params, timeout=timeout) as response:
                         response.raise_for_status()
                         data = await response.json()
                         
-                        # 重置健康状态
-                        server_health["failures"] = 0
-                        server_health["backoff_until"] = 0
+                        self._reset_server_health(health_key)
                         
                         if mode == "random":
                             if data.get("code") == 0 and data.get("cookie"):
                                 return data["cookie"]
                             else:
-                                logger.error(f"[Cookie管理器] 获取随机Cookie失败: {data.get('message', '未知错误')}")
+                                logger.warning(f"[Cookie管理器] v1 获取随机Cookie失败: {data.get('message', '未知错误')}")
                                 return None
                         elif mode == "onlysync":
-                            # 处理onlysync模式的响应
-                            cookie_parts = []
-                            required_cookies = {"DedeUserID", "SESSDATA", "bili_jct", "DedeUserID__ckMd5"}
-                            optional_cookies = {"buvid3", "buvid4"}
-                            found_cookies = {}
-                            is_valid = data.get("cookie_valid", False)
-                            has_cookie_info = "cookie_info" in data and isinstance(data["cookie_info"], dict) and "cookies" in data["cookie_info"] and isinstance(data["cookie_info"]["cookies"], list)
+                            return self._parse_v1_onlysync_response(data, dede_user_id)
 
-                            if has_cookie_info:
-                                cookies_list = data["cookie_info"]["cookies"]
-                                for cookie_item in cookies_list:
-                                    name = cookie_item.get("name")
-                                    value = cookie_item.get("value")
-                                    if (name in required_cookies or name in optional_cookies) and value:
-                                        found_cookies[name] = value
-
-                                all_required_found = required_cookies.issubset(found_cookies.keys())
-
-                                data_hash = hash(str(data.get("cookie_info", {})))
-                                log_key = f"cookie_checked_{dede_user_id}_{data_hash}"
-                                if log_key not in self._logged_cookies:
-                                    status_msg = {
-                                        "valid": is_valid,
-                                        "has_cookie_info": has_cookie_info,
-                                        "all_required_found": all_required_found,
-                                        "found_keys": list(found_cookies.keys()) if found_cookies else []
-                                    }
-                                    logger.debug(f"[Cookie管理器] DedeUserID={dede_user_id} Cookie检查结果: {status_msg}")
-                                    self._logged_cookies.add(log_key)
-
-                                if all_required_found:
-                                    cookie_parts.append(f"DedeUserID={found_cookies['DedeUserID']}")
-                                    cookie_parts.append(f"DedeUserID__ckMd5={found_cookies['DedeUserID__ckMd5']}")
-                                    cookie_parts.append(f"SESSDATA={found_cookies['SESSDATA']}")
-                                    cookie_parts.append(f"bili_jct={found_cookies['bili_jct']}")
-                                    
-                                    # 添加buvid字段
-                                    if "buvid3" in found_cookies:
-                                        cookie_parts.append(f"buvid3={found_cookies['buvid3']}")
-                                    if "buvid4" in found_cookies:
-                                        cookie_parts.append(f"buvid4={found_cookies['buvid4']}")
-
-                                    full_cookie = "; ".join(cookie_parts) + ";"
-                                    
-                                    success_log_key = f"cookie_success_{dede_user_id}_{data_hash}"
-                                    if success_log_key not in self._cookie_success_logged:
-                                        logger.debug(f"[Cookie管理器] DedeUserID={dede_user_id}: 已成功获取并验证必需的 Cookie。")
-                                        self._cookie_success_logged.add(success_log_key)
-                                    
-                                    return full_cookie
-                                else:
-                                    missing = required_cookies - found_cookies.keys()
-                                    logger.warning(f"[Cookie管理器] DedeUserID={dede_user_id}: 缺少必需的Cookie项: {missing}。服务器响应中的键: {list(found_cookies.keys())}")
-                                    return None
-                            else:
-                                logger.warning(f"[Cookie管理器] DedeUserID={dede_user_id}: Cookie服务器响应格式不正确或缺少 'cookie_info.cookies' 列表。")
-                                return None
-                
-                except asyncio.TimeoutError:
-                    # 记录超时错误
-                    logger.warning(f"[Cookie管理器] 请求Cookie服务器超时 (尝试 {retry+1}/{max_retries})")
-                    # 如果已经是最后一次重试，更新服务器健康状态
-                    if retry == max_retries - 1:
-                        self._update_server_health(health_key)
-                    continue
-                
-                except aiohttp.ClientResponseError as e:
-                    # 处理HTTP错误响应
-                    logger.error(f"[Cookie管理器] Cookie服务器返回错误状态码: {e.status} {e.message}")
+            except asyncio.TimeoutError:
+                logger.warning(f"[Cookie管理器] 请求Cookie服务器超时 (尝试 {retry+1}/{max_retries})")
+                if retry == max_retries - 1:
                     self._update_server_health(health_key)
-                    break
-                
-                except aiohttp.ClientError as e:
-                    # 处理连接错误
-                    logger.error(f"[Cookie管理器] 连接Cookie服务器失败: {e}")
-                    self._update_server_health(health_key)
-                    break
+                continue
             
-            # 所有重试都失败
-            logger.error(f"[Cookie管理器] 请求Cookie服务器失败，已重试{max_retries}次")
-            return None
+            except aiohttp.ClientResponseError as e:
+                logger.error(f"[Cookie管理器] Cookie服务器返回错误状态码: {e.status} {e.message}")
+                self._update_server_health(health_key)
+                break
+            
+            except aiohttp.ClientError as e:
+                logger.error(f"[Cookie管理器] 连接Cookie服务器失败: {e}")
+                self._update_server_health(health_key)
+                break
+            except Exception as e:
+                logger.error(f"[Cookie管理器] 处理响应失败: {e}", exc_info=True)
+                self._update_server_health(health_key)
+                return None
+        
+        logger.error(f"[Cookie管理器] 请求Cookie服务器失败，已重试{max_retries}次")
+        return None
+
+    def _reset_server_health(self, health_key: str):
+        server_health = self._server_health[health_key]
+        server_health["failures"] = 0
+        server_health["backoff_until"] = 0
+
+    def _parse_v1_onlysync_response(self, data: dict, dede_user_id: str) -> str | None:
+        """解析 v1 接口 onlysync 模式的响应"""
+        cookie_parts = []
+        required_cookies = {"DedeUserID", "SESSDATA", "bili_jct", "DedeUserID__ckMd5"}
+        optional_cookies = {"buvid3", "buvid4"}
+        found_cookies = {}
+        is_valid = data.get("cookie_valid", False)
+        has_cookie_info = "cookie_info" in data and isinstance(data["cookie_info"], dict) and "cookies" in data["cookie_info"] and isinstance(data["cookie_info"]["cookies"], list)
+
+        if has_cookie_info:
+            cookies_list = data["cookie_info"]["cookies"]
+            for cookie_item in cookies_list:
+                name = cookie_item.get("name")
+                value = cookie_item.get("value")
+                if (name in required_cookies or name in optional_cookies) and value:
+                    found_cookies[name] = value
+
+            all_required_found = required_cookies.issubset(found_cookies.keys())
+
+            data_hash = hash(str(data.get("cookie_info", {})))
+            log_key = f"cookie_checked_{dede_user_id}_{data_hash}"
+            if log_key not in self._logged_cookies:
+                status_msg = {
+                    "valid": is_valid,
+                    "has_cookie_info": has_cookie_info,
+                    "all_required_found": all_required_found,
+                    "found_keys": list(found_cookies.keys()) if found_cookies else []
+                }
+                logger.debug(f"[Cookie管理器] DedeUserID={dede_user_id} Cookie检查结果: {status_msg}")
+                self._logged_cookies.add(log_key)
+
+            if all_required_found:
+                cookie_parts.append(f"DedeUserID={found_cookies['DedeUserID']}")
+                cookie_parts.append(f"DedeUserID__ckMd5={found_cookies['DedeUserID__ckMd5']}")
+                cookie_parts.append(f"SESSDATA={found_cookies['SESSDATA']}")
+                cookie_parts.append(f"bili_jct={found_cookies['bili_jct']}")
                 
-        except Exception as e:
-            logger.error(f"[Cookie管理器] 处理响应失败: {e}", exc_info=True)
-            self._update_server_health(health_key)
+                if "buvid3" in found_cookies:
+                    cookie_parts.append(f"buvid3={found_cookies['buvid3']}")
+                if "buvid4" in found_cookies:
+                    cookie_parts.append(f"buvid4={found_cookies['buvid4']}")
+
+                full_cookie = "; ".join(cookie_parts) + ";"
+                
+                success_log_key = f"cookie_success_{dede_user_id}_{data_hash}"
+                if success_log_key not in self._cookie_success_logged:
+                    logger.debug(f"[Cookie管理器] DedeUserID={dede_user_id}: 已成功获取并验证必需的 Cookie。")
+                    self._cookie_success_logged.add(success_log_key)
+                
+                return full_cookie
+            else:
+                missing = required_cookies - found_cookies.keys()
+                logger.warning(f"[Cookie管理器] DedeUserID={dede_user_id}: 缺少必需的Cookie项: {missing}。服务器响应中的键: {list(found_cookies.keys())}")
+                return None
+        else:
+            logger.warning(f"[Cookie管理器] DedeUserID={dede_user_id}: Cookie服务器响应格式不正确或缺少 'cookie_info.cookies' 列表。")
             return None
     
     def _update_server_health(self, health_key: str):
