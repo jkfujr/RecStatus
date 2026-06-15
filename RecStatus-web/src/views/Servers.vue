@@ -84,7 +84,7 @@
                 <n-radio-button value="recheme">录播姬</n-radio-button>
                 <n-radio-button value="blrec">BLREC</n-radio-button>
               </n-radio-group>
-              <template #help>
+              <template #feedback>
                 <n-text depth="3">
                   录播姬和BLREC为不同的录播软件，请根据你的实际使用选择
                 </n-text>
@@ -92,7 +92,7 @@
             </n-form-item>
             <n-form-item label="录播机名称" path="recName">
               <n-input v-model:value="singleFormModel.recName" placeholder="请输入唯一的录播机名称" />
-              <template #help>
+              <template #feedback>
                 <n-text depth="3">
                   必须是全局唯一的名称，用于标识此录播机
                 </n-text>
@@ -100,7 +100,7 @@
             </n-form-item>
             <n-form-item label="录播机地址" path="url">
               <n-input v-model:value="singleFormModel.url" placeholder="例如：http://192.168.1.100:2356" />
-              <template #help>
+              <template #feedback>
                 <n-text depth="3">
                   录播姬默认端口为2356，BLREC默认端口为2233，必须以http://或https://开头
                 </n-text>
@@ -108,7 +108,7 @@
             </n-form-item>
             <n-form-item label="隐藏URL" path="urlHidden">
               <n-switch v-model:value="singleFormModel.urlHidden" />
-              <template #help>
+              <template #feedback>
                 <n-text depth="3">
                   启用后仅在服务器看到真实地址，前端显示为"已隐藏"
                 </n-text>
@@ -116,7 +116,7 @@
             </n-form-item>
             <n-form-item v-if="singleFormModel.recType === 'recheme'" label="启用管理" path="manage">
               <n-switch v-model:value="singleFormModel.manage" />
-              <template #help>
+              <template #feedback>
                 <n-text depth="3">
                   启用后可以在此平台添加房间、修改设置等；关闭则仅支持查看状态
                 </n-text>
@@ -124,7 +124,7 @@
             </n-form-item>
             <n-form-item v-if="singleFormModel.recType === 'blrec'" label="启用管理" path="manage">
               <n-switch v-model:value="singleFormModel.manage" />
-              <template #help>
+              <template #feedback>
                 <n-text depth="3">
                   启用后可以在此平台添加房间、修改设置等；关闭则仅支持查看状态
                 </n-text>

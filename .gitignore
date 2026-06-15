@@ -10,4 +10,5 @@ dist
 .*
 config.yaml
 config2.yaml
+RecStatus/data/config.json
 @eaDir/

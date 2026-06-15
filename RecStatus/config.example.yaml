@@ -15,12 +15,12 @@ AUTH:
   AUTH_KEY_EXPIRE: 1919810
   # 用户
   AUTH_USER:
-    # 用户名
-    你好:
-      # 用户名
-      USER: 114514
+    # 昵称
+    admin:
+      # 用户ID
+      USER: admin
       # 密码
-      PASS: "114514"
+      PASS: "admin"
 
 
 # 录播姬(rectpye)

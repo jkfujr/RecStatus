@@ -147,4 +147,61 @@ export interface ServerQueryParams {
   recName?: string
   recType?: 'recheme' | 'blrec'
   recStatus?: 'online' | 'offline' | 'error'
-} 
+}
+
+export interface AuthUserConfig {
+  USER?: string
+  PASS?: string
+}
+
+export interface AuthConfig {
+  ENABLE: boolean
+  AUTH_KEY?: string
+  AUTH_KEY_EXPIRE: number
+  AUTH_USER: Record<string, AuthUserConfig>
+}
+
+export interface CookieBlockConfig {
+  VALUE?: string
+  TOKEN?: string
+  MODE?: string
+  CHECK_INTERVAL?: number
+  RANDOM_CHANGE_INTERVAL?: number
+  REQUEST_TIMEOUT?: number
+  MAX_RETRIES?: number
+}
+
+export interface CookieConfig {
+  ENABLE?: boolean
+  [key: string]: boolean | CookieBlockConfig | undefined
+}
+
+export interface RechemeGlobalConfig {
+  URL_HIDDEN?: boolean
+  BASIC?: boolean
+  BASIC_USER?: string
+  BASIC_PASS?: string
+  COOKIE?: CookieConfig
+}
+
+export interface BlrecGlobalConfig {
+  URL_HIDDEN?: boolean
+  BASIC?: boolean
+  BASIC_KEY?: string
+}
+
+export interface SystemConfig {
+  HOST: string
+  PORT: number
+  AUTH: AuthConfig
+  COOKIE: CookieConfig
+  RECHEME: RechemeGlobalConfig
+  BLREC: BlrecGlobalConfig
+}
+
+export interface SystemConfigResponse {
+  success?: boolean
+  restartRequired: boolean
+  message?: string
+  config: SystemConfig
+}

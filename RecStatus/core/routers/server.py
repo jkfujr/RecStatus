@@ -126,7 +126,7 @@ async def get_all_recservers(config: Dict = None, logger = None) -> List[RecServ
 
     if "BLREC" in config:
         for rec_name, api_info_list in config["BLREC"].items():
-            if isinstance(api_info_list, list) and rec_name not in ["BLREC_BASIC", "BLREC_BASIC_KEY"]:
+            if isinstance(api_info_list, list):
                 server_names["blrec"].append(rec_name)
                 for api_info in api_info_list:
                     tasks.append(

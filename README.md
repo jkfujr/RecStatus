@@ -18,8 +18,9 @@
 # 1.安装依赖
 pip install -r requirements.txt
 
-# 2.添加 API
-编辑 `config.example.yaml` 文件，添加录播姬/BLREC地址并重命名为 `config.yaml`
+# 2.配置
+首次运行会自动创建 `RecStatus/data/config.json`，并在命令行打印一次默认管理员密码。
+也可以参考 `RecStatus/config.example.json` 手动创建或修改配置。
 
 # 3.运行
 py main.py

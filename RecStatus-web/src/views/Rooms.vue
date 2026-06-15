@@ -171,7 +171,7 @@
             placeholder="请输入房间号，每行一个"
             :autosize="{ minRows: 3, maxRows: 10 }"
           />
-          <template #help>
+          <template #feedback>
             <n-text depth="3">
               支持批量添加，每行输入一个房间号
             </n-text>
@@ -194,7 +194,7 @@
             multiple
             clearable
           />
-          <template #help>
+          <template #feedback>
             <n-text depth="3">
               <ul style="margin: 0; padding-left: 16px;">
                 <li>不选择：添加到所有符合类型的在线录播机</li>
@@ -208,7 +208,7 @@
         
         <n-form-item label="自动录制" path="autoRecord">
           <n-switch v-model:value="formModel.autoRecord" />
-          <template #help>
+          <template #feedback>
             <n-text depth="3" v-if="formModel.recType === 'blrec'">
               BLREC始终自动开始录制，此选项对BLREC无效
             </n-text>

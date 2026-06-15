@@ -12,6 +12,10 @@ logger = log()
 class Auth:
     """认证"""    
     def __init__(self, config):
+        self.reload(config)
+
+    def reload(self, config):
+        """重新加载认证配置"""
         auth_config = config.get("AUTH", {})
         self.enabled = auth_config.get("ENABLE", False)
         self.secret_key = auth_config.get("AUTH_KEY", "114514")

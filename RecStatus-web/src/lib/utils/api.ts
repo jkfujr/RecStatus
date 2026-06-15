@@ -1,4 +1,11 @@
-import type { RoomData, ApiResponse, RecServer, ServerQueryParams } from '@/lib/types/api'
+import type {
+  RoomData,
+  ApiResponse,
+  RecServer,
+  ServerQueryParams,
+  SystemConfig,
+  SystemConfigResponse
+} from '@/lib/types/api'
 import { useAuthStore } from '@/lib/store/auth'
 
 // Vite 代理处理
@@ -471,3 +478,29 @@ export async function toggleRecording(
     throw error
   }
 } 
+
+// 获取系统配置
+export async function fetchSystemConfig(): Promise<SystemConfigResponse> {
+  try {
+    return await apiRequest<SystemConfigResponse>('/api/config', {
+      errorMessage: '获取系统配置失败'
+    })
+  } catch (error) {
+    console.error('Failed to fetch system config:', error)
+    throw error
+  }
+}
+
+// 更新系统配置
+export async function updateSystemConfig(config: Partial<SystemConfig>): Promise<SystemConfigResponse> {
+  try {
+    return await apiRequest<SystemConfigResponse>('/api/config', {
+      method: 'PUT',
+      body: config,
+      errorMessage: '保存系统配置失败'
+    })
+  } catch (error) {
+    console.error('Failed to update system config:', error)
+    throw error
+  }
+}

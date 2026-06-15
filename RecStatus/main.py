@@ -15,6 +15,7 @@ from core.dependencies import setup_dependencies, get_logger
 from core.routers import room as room_router
 from core.routers import server as server_router
 from core.routers import auth as auth_router
+from core.routers import config as config_router
 
 # === 全局变量 ===
 _config: Dict = None
@@ -75,6 +76,7 @@ app.add_middleware(
 app.include_router(room_router.router, prefix="/api", tags=["Room Management"])
 app.include_router(server_router.router, prefix="/api", tags=["Server Management"])
 app.include_router(auth_router.router, prefix="/api", tags=["Authentication"])
+app.include_router(config_router.router, prefix="/api", tags=["Configuration"])
 
 # --- 静态文件和 SPA --- 
 app.mount("/assets", StaticFiles(directory="web/assets"), name="assets")
@@ -113,7 +115,7 @@ if __name__ == "__main__":
     try:
         startup_config = load_config() 
         host = startup_config.get("HOST", "127.0.0.1")
-        port = startup_config.get("PORT", 8080)
+        port = startup_config.get("PORT", 11111)
         temp_logger = log()
     except Exception as e:
         log_print(f"启动前初始化失败: {e}", "CRITICAL")

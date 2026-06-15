@@ -28,11 +28,10 @@
       "@vicons/ionicons5"
     ],
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
     
     /* Additional Settings */
-    "baseUrl": ".",
     "allowJs": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true

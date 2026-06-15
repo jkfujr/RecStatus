@@ -1,0 +1,29 @@
+{
+  "HOST": "0.0.0.0",
+  "PORT": 11111,
+  "AUTH": {
+    "ENABLE": true,
+    "AUTH_KEY": "请在首次启动后使用自动生成的随机值，或自行替换为随机密钥",
+    "AUTH_KEY_EXPIRE": 1919810,
+    "AUTH_USER": {
+      "admin": {
+        "USER": "admin",
+        "PASS": "请在首次启动后使用自动生成的随机密码，或自行替换"
+      }
+    }
+  },
+  "COOKIE": {
+    "ENABLE": false
+  },
+  "RECHEME": {
+    "URL_HIDDEN": false,
+    "BASIC": false,
+    "BASIC_USER": "",
+    "BASIC_PASS": ""
+  },
+  "BLREC": {
+    "URL_HIDDEN": false,
+    "BASIC": true,
+    "BASIC_KEY": "bili2233"
+  }
+}

@@ -1,158 +1,167 @@
-import re
-from ruamel.yaml import YAML
-from typing import Dict
-from io import StringIO
+import json
+import os
+import secrets
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict
 
 from core.logs import log_print
 
-CONFIG_FILE = "config.yaml"
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+CONFIG_FILE = DATA_DIR / "config.json"
+LEGACY_CONFIG_FILE = BASE_DIR / "config.yaml"
 
-def load_config() -> Dict:
-    """加载配置文件并应用默认值"""
-    try:
-        yaml = YAML()
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            config = yaml.load(f)
-            
-        if config is None:
-            config = {}
-            log_print(f"配置文件 {CONFIG_FILE} 为空或格式错误，将使用默认值创建。", "WARNING")
-            
-        if "AUTH" not in config:
-            config["AUTH"] = {}
-            
-        if not isinstance(config["AUTH"], dict):
-            log_print("配置文件中的 AUTH 必须是一个字典，已重置为默认值。", "WARNING")
-            config["AUTH"] = {}
-            
-        auth_defaults = {
-            "ENABLE": False,
-            "AUTH_KEY": "114514",
-            "AUTH_KEY_EXPIRE": 60 * 24,
-            "AUTH_USER": {}
-        }
-        for key, default_value in auth_defaults.items():
-            if key not in config["AUTH"]:
-                config["AUTH"][key] = default_value
 
-        top_level_defaults = {
-            "HOST": "127.0.0.1",
-            "PORT": 8080,
-            "RECHEME": {},
-            "BLREC": {}
-        }
-        for key, default_value in top_level_defaults.items():
-            if key not in config:
-                config[key] = default_value
+def _random_secret(length: int = 32) -> str:
+    """生成适合配置文件使用的随机密钥。"""
+    return secrets.token_urlsafe(length)
 
-        return config
-        
-    except FileNotFoundError:
-        log_print(f"配置文件 {CONFIG_FILE} 未找到，将创建并使用默认值。", "WARNING")
-        default_config = {}
-        top_level_defaults = {
-            "HOST": "127.0.0.1",
-            "PORT": 8080,
-            "RECHEME": {},
-            "BLREC": {},
-            "AUTH": {
-                "ENABLE": False,
-                "AUTH_KEY": "114514",
-                "AUTH_KEY_EXPIRE": 60 * 24,
-                "AUTH_USER": {}
+
+def create_default_config() -> tuple[Dict[str, Any], str]:
+    """创建首次启动默认配置，并返回初始管理员密码。"""
+    initial_password = _random_secret(18)
+    config = {
+        "HOST": "0.0.0.0",
+        "PORT": 11111,
+        "AUTH": {
+            "ENABLE": True,
+            "AUTH_KEY": _random_secret(32),
+            "AUTH_KEY_EXPIRE": 1919810,
+            "AUTH_USER": {
+                "admin": {
+                    "USER": "admin",
+                    "PASS": initial_password
+                }
             }
-        }
-        return default_config
-        
+        },
+        "COOKIE": {
+            "ENABLE": False
+        },
+        "RECHEME": {},
+        "BLREC": {}
+    }
+    return config, initial_password
+
+
+def apply_defaults(config: Dict[str, Any]) -> Dict[str, Any]:
+    """补齐运行所需的最小默认配置。"""
+    if not isinstance(config, dict):
+        raise ValueError("配置顶层必须是对象")
+
+    config.setdefault("HOST", "0.0.0.0")
+    config.setdefault("PORT", 11111)
+
+    auth_config = config.setdefault("AUTH", {})
+    if not isinstance(auth_config, dict):
+        log_print("配置中的 AUTH 必须是对象，已重置为空对象。", "WARNING")
+        auth_config = {}
+        config["AUTH"] = auth_config
+    auth_config.setdefault("ENABLE", True)
+    auth_config.setdefault("AUTH_KEY", "114514")
+    auth_config.setdefault("AUTH_KEY_EXPIRE", 1919810)
+    if not isinstance(auth_config.get("AUTH_USER"), dict):
+        auth_config["AUTH_USER"] = {}
+
+    for section in ("COOKIE", "RECHEME", "BLREC"):
+        section_config = config.setdefault(section, {})
+        if not isinstance(section_config, dict):
+            log_print(f"配置中的 {section} 必须是对象，已重置为空对象。", "WARNING")
+            config[section] = {}
+
+    return config
+
+
+def _normalize_legacy_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """迁移时一次性规范化旧字段名。"""
+    normalized = deepcopy(config)
+    blrec_config = normalized.get("BLREC")
+    if isinstance(blrec_config, dict):
+        if "BLREC_BASIC" in blrec_config and "BASIC" not in blrec_config:
+            blrec_config["BASIC"] = blrec_config["BLREC_BASIC"]
+        if "BLREC_BASIC_KEY" in blrec_config and "BASIC_KEY" not in blrec_config:
+            blrec_config["BASIC_KEY"] = blrec_config["BLREC_BASIC_KEY"]
+        blrec_config.pop("BLREC_BASIC", None)
+        blrec_config.pop("BLREC_BASIC_KEY", None)
+    return normalized
+
+
+def _backup_legacy_config() -> Path:
+    backup_path = LEGACY_CONFIG_FILE.with_suffix(LEGACY_CONFIG_FILE.suffix + ".bak")
+    if backup_path.exists():
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        backup_path = LEGACY_CONFIG_FILE.with_suffix(LEGACY_CONFIG_FILE.suffix + f".{timestamp}.bak")
+    LEGACY_CONFIG_FILE.rename(backup_path)
+    return backup_path
+
+
+def _load_json_config() -> Dict[str, Any]:
+    with CONFIG_FILE.open("r", encoding="utf-8") as file:
+        config = json.load(file)
+    return apply_defaults(config)
+
+
+def _load_legacy_yaml() -> Dict[str, Any]:
+    try:
+        from ruamel.yaml import YAML
+    except ImportError as e:
+        raise RuntimeError("迁移 YAML 配置需要安装 ruamel.yaml") from e
+
+    yaml = YAML(typ="safe")
+    with LEGACY_CONFIG_FILE.open("r", encoding="utf-8") as file:
+        config = yaml.load(file)
+    if not isinstance(config, dict):
+        raise ValueError(f"旧配置文件 {LEGACY_CONFIG_FILE} 的顶层必须是对象")
+    return apply_defaults(_normalize_legacy_config(config))
+
+
+def _write_json_config(config: Dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    temp_file = CONFIG_FILE.with_suffix(".json.tmp")
+    with temp_file.open("w", encoding="utf-8") as file:
+        json.dump(config, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+    os.replace(temp_file, CONFIG_FILE)
+
+
+def _migrate_legacy_config() -> Dict[str, Any]:
+    config = _load_legacy_yaml()
+    _write_json_config(config)
+    backup_path = _backup_legacy_config()
+    log_print(f"[配置] 已迁移 {LEGACY_CONFIG_FILE} 到 {CONFIG_FILE}")
+    log_print(f"[配置] 旧配置已备份为 {backup_path}")
+    return config
+
+
+def _create_default_config_file() -> Dict[str, Any]:
+    config, initial_password = create_default_config()
+    _write_json_config(config)
+    log_print(f"[配置] 未找到配置文件，已创建默认配置: {CONFIG_FILE}")
+    log_print("[配置] 首次启动默认管理员账号：admin")
+    log_print(f"[配置] 首次启动默认管理员密码：{initial_password}")
+    return config
+
+
+def load_config() -> Dict[str, Any]:
+    """加载配置；运行态只读取 JSON，YAML 仅用于一次性迁移。"""
+    try:
+        if CONFIG_FILE.exists():
+            return _load_json_config()
+        if LEGACY_CONFIG_FILE.exists():
+            return _migrate_legacy_config()
+        return _create_default_config_file()
     except Exception as e:
-        log_print(f"加载配置文件 {CONFIG_FILE} 失败: {e}", "ERROR")
+        log_print(f"加载配置失败: {e}", "ERROR")
         raise
 
-def save_config(config: Dict):
-    """保存配置到文件"""
+
+def save_config(config: Dict[str, Any]) -> bool:
+    """保存配置到 JSON 文件。"""
     try:
-        yaml = YAML()
-        yaml.preserve_quotes = True
-        yaml.width = 1000
-        yaml.indent(mapping=2, sequence=4, offset=2)
-        buf = StringIO()
-        yaml.dump(config, buf)
-        content = buf.getvalue()
-        
-        # 修复格式
-        content = re.sub(r'-\s*\n\s+', '- ', content)
-        
-        # 空行处理
-        lines = content.splitlines()
-        formatted_lines = []
-        in_recheme = False
-        prev_line_is_rec_item = False
-        
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            
-            if line.strip() == "RECHEME:":
-                in_recheme = True
-                formatted_lines.append(line)
-                i += 1
-                continue
-                
-            if in_recheme and line and not line.startswith(" ") and line.endswith(":"):
-                in_recheme = False
-                
-                if formatted_lines and formatted_lines[-1].strip():
-                    formatted_lines.append("")
-                    formatted_lines.append("")
-                elif formatted_lines and not formatted_lines[-1].strip():
-                    formatted_lines.append("")
-                
-                formatted_lines.append(line)
-                i += 1
-                continue
-            
-            # 处理RECHEME内部
-            if in_recheme:
-                if line.startswith("  ") and line.strip().endswith(":"):
-                    if prev_line_is_rec_item:
-                        while i > 0 and i < len(formatted_lines) and not formatted_lines[-1].strip():
-                            formatted_lines.pop()
-                    
-                    formatted_lines.append(line)
-                    prev_line_is_rec_item = True
-                    i += 1
-                    continue
-                
-                if line.strip():
-                    formatted_lines.append(line)
-                    i += 1
-                    if not (line.startswith("  ") and line.strip().endswith(":")):
-                        prev_line_is_rec_item = False
-                    continue
-                
-                if not line.strip():
-                    next_is_rec_item = False
-                    if i+1 < len(lines):
-                        next_line = lines[i+1]
-                        if next_line.startswith("  ") and next_line.strip().endswith(":"):
-                            next_is_rec_item = True
-                    
-                    if next_is_rec_item:
-                        i += 1
-                        continue
-                    else:
-                        formatted_lines.append(line)
-                        i += 1
-                        continue
-            else:
-                formatted_lines.append(line)
-                i += 1
-                prev_line_is_rec_item = False
-        
-        with open(CONFIG_FILE, "w", encoding="utf-8") as file:
-            file.write("\n".join(formatted_lines))
-            log_print(f"[配置] 配置文件 {CONFIG_FILE} 保存成功")
+        _write_json_config(apply_defaults(config))
+        log_print(f"[配置] 配置文件 {CONFIG_FILE} 保存成功")
         return True
     except Exception as e:
         log_print(f"[配置] 保存配置文件 {CONFIG_FILE} 失败: {e}", "ERROR")
-        return False 
+        return False

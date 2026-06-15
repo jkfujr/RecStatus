@@ -121,6 +121,23 @@ class CookieManager:
         logger.info("[Cookie管理器] 已停止。")
         self.tasks = {}
 
+    async def reload(self, config):
+        """重新加载配置并重启 Cookie 管理任务"""
+        was_running = self.running
+        if was_running:
+            await self.stop()
+        self.config = config
+        self._user_instances = defaultdict(list)
+        self._logged_configs = set()
+        self._logged_cookies = set()
+        self._batch_check_logged = False
+        self._cookie_results = {"updated": [], "unchanged": [], "failed": []}
+        self._cookie_success_logged = set()
+        self._cookie_updates_batch = defaultdict(list)
+        self._cycle_completed_counter = 0
+        if was_running:
+            await self.start()
+
     def _get_effective_cookie_config(self, rec_name: str, api_info: dict) -> dict:
         """获取生效的 Cookie 配置 (实例覆盖全局)"""
         global_cookie_config = self.config.get("COOKIE", {})
