@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
-from typing import List, Dict, Union, Optional
-import asyncio
+from typing import Any, List, Union, Optional
+import asyncio, copy, logging
 
 from core.dependencies import get_config, get_logger
 from core.models import (
@@ -19,9 +19,9 @@ router = APIRouter()
 async def _fetch_single_server_info(
     rec_type: str,
     rec_name: str,
-    api_info: Dict,
-    config: Dict,
-    logger
+    api_info: dict[str, Any],
+    config: dict[str, Any],
+    logger: logging.Logger
 ) -> Optional[RecServerInfo]:
     """获取单个录播机实例的状态和统计信息"""
     instance = None
@@ -85,7 +85,7 @@ async def _fetch_single_server_info(
         recordingRooms=recording
     )
 
-def _summarize_server_results(servers_info: List[RecServerInfo], logger) -> None:
+def _summarize_server_results(servers_info: List[RecServerInfo], logger: logging.Logger) -> None:
     """汇总服务器检查结果并记录日志"""
     total_servers = len(servers_info)
     online_servers = sum(1 for s in servers_info if s.recStatus == "online")
@@ -102,36 +102,36 @@ def _summarize_server_results(servers_info: List[RecServerInfo], logger) -> None
     if empty_servers:
         logger.debug(f"[Server Status] 没有房间数据的服务器: {', '.join(empty_servers)}")
 
-async def get_all_recservers(config: Dict = None, logger = None) -> List[RecServerInfo]:
+async def get_all_recservers(config: dict[str, Any], logger: logging.Logger) -> List[RecServerInfo]:
     """获取所有录播机信息"""
     if not config:
         logger.error("[Server Status] 配置未提供，无法获取服务器列表")
         return []
-    if not logger:
-        import logging
-        logger = logging.getLogger(__name__)
-        if not logger.hasHandlers(): logging.basicConfig()
 
-    tasks = []
-    server_names = {"recheme": [], "blrec": []}
+    tasks: list[Any] = []
+    server_names: dict[str, list[str]] = {"recheme": [], "blrec": []}
     
-    if "RECHEME" in config:
-        for rec_name, api_info_list in config["RECHEME"].items():
+    recheme_config = config.get("RECHEME", {})
+    if isinstance(recheme_config, dict):
+        for rec_name, api_info_list in recheme_config.items():
             if isinstance(api_info_list, list):
                 server_names["recheme"].append(rec_name)
                 for api_info in api_info_list:
-                    tasks.append(
-                        _fetch_single_server_info("recheme", rec_name, api_info, config, logger)
-                    )
+                    if isinstance(api_info, dict):
+                        tasks.append(
+                            _fetch_single_server_info("recheme", rec_name, api_info, config, logger)
+                        )
 
-    if "BLREC" in config:
-        for rec_name, api_info_list in config["BLREC"].items():
+    blrec_config = config.get("BLREC", {})
+    if isinstance(blrec_config, dict):
+        for rec_name, api_info_list in blrec_config.items():
             if isinstance(api_info_list, list):
                 server_names["blrec"].append(rec_name)
                 for api_info in api_info_list:
-                    tasks.append(
-                        _fetch_single_server_info("blrec", rec_name, api_info, config, logger)
-                    )
+                    if isinstance(api_info, dict):
+                        tasks.append(
+                            _fetch_single_server_info("blrec", rec_name, api_info, config, logger)
+                        )
 
     if not tasks:
         logger.info("[Server Status] 配置中未找到有效的录播机实例")
@@ -155,50 +155,17 @@ async def get_all_recservers(config: Dict = None, logger = None) -> List[RecServ
     logger.debug(f"[Server Status] 获取完成，共处理 {len(servers_info)} 个服务器实例")
     return servers_info
 
-async def _add_single_server(
-    request: AddServerRequest, 
-    save_immediately: bool = True, 
-    current_user: Optional[str] = None,
-    config: Dict = None,
-    logger = None
-) -> Dict:
-    """添加单个录播机 (使用依赖注入的 config 和 logger)"""
-    is_update = request.originalName is not None and request.originalName != ""
-    operation_type = "更新" if is_update else "添加"
-    
-    logger.debug(f"[API] {'用户 ' + current_user + ' ' if current_user else ''}请求{operation_type}录播机: {request.recName} ({request.recType})")
-    
-    if request.recType not in ["recheme", "blrec"]:
-        raise HTTPException(status_code=400, detail="不支持的录播类型，必须是 recheme 或 blrec")
-    
-    if not request.url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="URL 必须以 http:// 或 https:// 开头")
-    
-    if not config:
-        logger.error("[API] _add_single_server 无法访问全局配置")
-        raise HTTPException(status_code=500, detail="内部服务器错误：无法访问配置")
-    
-    config_key = request.recType.upper()
-    
-    if not is_update and config_key in config and request.recName in config[config_key]:
-        raise HTTPException(status_code=400, detail=f"{config_key} 录播机名称 {request.recName} 已存在")
+def _restore_config(config: dict[str, Any], snapshot: dict[str, Any]) -> None:
+    config.clear()
+    config.update(snapshot)
 
-    if is_update:
-        original_config_key = request.recType.upper()
-        if original_config_key not in config or request.originalName not in config[original_config_key]:
-            raise HTTPException(status_code=404, detail=f"要更新的录播机 {request.originalName} 不存在")
-
-        if request.originalName != request.recName and config_key in config and request.recName in config[config_key]:
-            raise HTTPException(status_code=400, detail=f"无法更新名称，{config_key} 录播机名称 {request.recName} 已存在")
-    
-    server_config = {
-        "URL": request.url
-    }
+def _build_server_config(request: AddServerRequest) -> dict[str, Any]:
+    server_config: dict[str, Any] = {"URL": request.url}
     
     if request.manage is not True:
         server_config["MANAGE"] = request.manage
     
-    if hasattr(request, 'url_hidden') and request.url_hidden:
+    if request.url_hidden:
         server_config["URL_HIDDEN"] = True
     
     if request.recType == "recheme":
@@ -209,71 +176,61 @@ async def _add_single_server(
         if request.basicPass:
             server_config["BASIC_PASS"] = request.basicPass
     elif request.recType == "blrec":
-         if request.basic is not None:
-             server_config["BASIC"] = request.basic
-         if request.basicKey:
+        if request.basic is not None:
+            server_config["BASIC"] = request.basic
+        if request.basicKey:
             server_config["BASIC_KEY"] = request.basicKey
     
-    # 保存原始配置以便回滚
-    original_config = None
+    return server_config
+
+async def _add_single_server(
+    request: AddServerRequest, 
+    save_immediately: bool, 
+    current_user: Optional[str],
+    config: dict[str, Any],
+    logger: logging.Logger
+) -> dict[str, Any]:
+    """添加单个录播机 (使用依赖注入的 config 和 logger)"""
+    original_name = request.originalName or ""
+    is_update = bool(original_name)
+    operation_type = "更新" if is_update else "添加"
+    
+    logger.debug(f"[API] {'用户 ' + current_user + ' ' if current_user else ''}请求{operation_type}录播机: {request.recName} ({request.recType})")
+    
+    if request.recType not in ["recheme", "blrec"]:
+        raise HTTPException(status_code=400, detail="不支持的录播类型，必须是 recheme 或 blrec")
+    
+    if not request.url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="URL 必须以 http:// 或 https:// 开头")
+    
+    config_key = request.recType.upper()
+    section_value = config.get(config_key)
+    server_section: dict[str, Any] = section_value if isinstance(section_value, dict) else {}
+    
+    if not is_update and request.recName in server_section:
+        raise HTTPException(status_code=400, detail=f"{config_key} 录播机名称 {request.recName} 已存在")
 
     if is_update:
-        original_config_key = request.recType.upper()
-        original_name = request.originalName
+        if original_name not in server_section:
+            raise HTTPException(status_code=404, detail=f"要更新的录播机 {original_name} 不存在")
 
-        if original_config_key in config and original_name in config[original_config_key]:
-            original_config = config[original_config_key][original_name].copy()
+        if original_name != request.recName and request.recName in server_section:
+            raise HTTPException(status_code=400, detail=f"无法更新名称，{config_key} 录播机名称 {request.recName} 已存在")
+    
+    server_config = _build_server_config(request)
+    snapshot = copy.deepcopy(config) if save_immediately else None
 
-            if original_name != request.recName:
-                del config[original_config_key][original_name]
-                if not config[original_config_key]:
-                    del config[original_config_key]
-    else:
-        if config_key in config and request.recName in config[config_key]:
-            original_config = config[config_key][request.recName].copy()
-        elif config_key in config:
-            original_config = []
-
-    # 添加或更新配置
-    if config_key not in config:
-        config[config_key] = {}
-    if request.recName not in config[config_key]:
-        config[config_key][request.recName] = []
-    config[config_key][request.recName] = [server_config]
+    if not isinstance(section_value, dict):
+        config[config_key] = server_section
+    
+    if is_update and original_name != request.recName:
+        del server_section[original_name]
+    server_section[request.recName] = [server_config]
     
     if save_immediately and not save_config(config):
         logger.error(f"[API] {operation_type}服务器 {request.recName} 后保存配置文件失败，正在回滚...")
-        
-        if is_update:
-            original_config_key = request.recType.upper()
-            original_name = request.originalName
-            
-            if original_name != request.recName:
-                if config_key in config and request.recName in config[config_key]:
-                    del config[config_key][request.recName]
-                    if not config[config_key]:
-                        del config[config_key]
-                
-                if original_config_key not in config:
-                    config[original_config_key] = {}
-                
-                if original_config is not None:
-                    config[original_config_key][original_name] = original_config
-            else:
-                if original_config is not None:
-                    config[original_config_key][original_name] = original_config
-                else:
-                    del config[original_config_key][original_name]
-                    if not config[original_config_key]:
-                        del config[original_config_key]
-        else:
-            if original_config is not None:
-                config[config_key][request.recName] = original_config
-            else:
-                del config[config_key][request.recName]
-                if not config[config_key]:
-                    del config[config_key]
-                    
+        if snapshot is not None:
+            _restore_config(config, snapshot)
         logger.error(f"[API] {operation_type}服务器后保存配置文件失败，已回滚内存修改")
         raise HTTPException(status_code=500, detail="保存配置文件失败")
     
@@ -293,10 +250,10 @@ async def _add_single_server(
 async def _delete_single_server(
     recName: str, 
     recType: str, 
-    current_user: Optional[str] = None,
-    config: Dict = None,
-    logger = None
-):
+    current_user: Optional[str],
+    config: dict[str, Any],
+    logger: logging.Logger
+) -> dict[str, Any]:
     """删除单个录播机 (使用依赖注入的 config 和 logger)"""
     if not recName:
         raise HTTPException(status_code=400, detail="录播机名称不能为空")
@@ -305,40 +262,36 @@ async def _delete_single_server(
         raise HTTPException(status_code=400, detail="不支持的录播机类型")
         
     config_key = recType.upper()
-    if config_key not in config or recName not in config[config_key]:
+    section_value = config.get(config_key)
+    if not isinstance(section_value, dict) or recName not in section_value:
         raise HTTPException(status_code=404, detail=f"{config_key} 服务器 {recName} 不存在")
     
-    original_server_list = config[config_key][recName].copy() if isinstance(config[config_key][recName], list) else config[config_key][recName]
-    try:
-        del config[config_key][recName]
-        logger.info(f"[API] {'用户 ' + current_user + ' ' if current_user else ''}删除 {recType} 服务器 {recName} 成功 (内存)")
-        if not save_config(config):
-            config[config_key][recName] = original_server_list
-            logger.error(f"[API] 删除服务器 {recName} 后保存配置文件失败，已回滚")
-            raise HTTPException(status_code=500, detail="保存配置文件失败")
-        return {
-            "success": True,
-            "message": f"已删除{recType}录播机 {recName}",
-            "data": {
-                "recName": recName,
-                "recType": recType
-            }
+    snapshot = copy.deepcopy(config)
+    del section_value[recName]
+    logger.info(f"[API] {'用户 ' + current_user + ' ' if current_user else ''}删除 {recType} 服务器 {recName} 成功 (内存)")
+
+    if not save_config(config):
+        _restore_config(config, snapshot)
+        logger.error(f"[API] 删除服务器 {recName} 后保存配置文件失败，已回滚")
+        raise HTTPException(status_code=500, detail="保存配置文件失败")
+
+    return {
+        "success": True,
+        "message": f"已删除{recType}录播机 {recName}",
+        "data": {
+            "recName": recName,
+            "recType": recType
         }
-    except Exception as e:
-        logger.error(f"[API] 删除录播机 {recName} 失败: {str(e)}")
-        if config_key in config and recName not in config[config_key]:
-            config[config_key][recName] = original_server_list
-            logger.info(f"[API] 删除录播机 {recName} 出错，已回滚内存修改")
-        raise HTTPException(status_code=500, detail=f"删除录播机失败: {str(e)}")
+    }
 
 # === API ===
 @router.get("/server", response_model=List[RecServerInfo])
 async def get_recservers(
-    recName: str = None,
-    recType: str = None,
-    recStatus: str = None,
-    config: Dict = Depends(get_config),
-    logger = Depends(get_logger)
+    recName: Optional[str] = None,
+    recType: Optional[str] = None,
+    recStatus: Optional[str] = None,
+    config: dict[str, Any] = Depends(get_config),
+    logger: logging.Logger = Depends(get_logger)
 ):
     """获取所有录播机信息 (使用依赖注入的 logger)"""
     filters = []
@@ -368,27 +321,22 @@ async def get_recservers(
 async def add_server(
     request: Union[AddServerRequest, BatchAddServerRequest],
     current_user: str = Depends(get_current_user),
-    config: Dict = Depends(get_config),
-    logger = Depends(get_logger)
+    config: dict[str, Any] = Depends(get_config),
+    logger: logging.Logger = Depends(get_logger)
 ):
     """添加录播机 (使用依赖注入的 logger)"""
     logger.debug(f"[API] 用户 {current_user} 请求添加录播机")
     
     if isinstance(request, BatchAddServerRequest):
         logger.debug(f"[API] 批量添加请求，共 {len(request.servers)} 个录播机")
-        all_results = []
-        failed_servers = []
-        added_servers = []
+        all_results: list[dict[str, Any]] = []
+        failed_servers: list[dict[str, Any]] = []
+        snapshot = copy.deepcopy(config)
 
         for server_req in request.servers:
             try:
                 result = await _add_single_server(server_req, False, current_user, config, logger)
                 all_results.append(result["data"])
-                added_servers.append({
-                    "config_key": server_req.recType.upper(),
-                    "rec_name": server_req.recName,
-                    "original_config": None
-                })
             except HTTPException as e:
                 failed_servers.append({
                     "recName": server_req.recName,
@@ -400,20 +348,7 @@ async def add_server(
         if all_results:
             if not save_config(config):
                 logger.error("[API] 批量添加服务器后保存配置文件失败，正在回滚内存更改...")
-                for added_server in added_servers:
-                    config_key = added_server["config_key"]
-                    rec_name = added_server["rec_name"]
-                    try:
-                        if added_server["original_config"] is None:
-                            if config_key in config and rec_name in config[config_key]:
-                                del config[config_key][rec_name]
-                                if not config[config_key]:
-                                    del config[config_key]
-                        else:
-                            config[config_key][rec_name] = added_server["original_config"]
-                    except Exception as e:
-                        logger.error(f"[API] 回滚服务器 {rec_name} 失败: {str(e)}")
-                
+                _restore_config(config, snapshot)
                 logger.info("[API] 批量添加回滚完成")
                 raise HTTPException(status_code=500, detail="保存配置文件失败")
             
@@ -437,8 +372,8 @@ async def add_server(
 async def delete_server(
     request: DeleteServerRequest,
     current_user: str = Depends(get_current_user),
-    config: Dict = Depends(get_config),
-    logger = Depends(get_logger)
+    config: dict[str, Any] = Depends(get_config),
+    logger: logging.Logger = Depends(get_logger)
 ):
     """删除录播机 (使用依赖注入的 logger)"""
     logger.debug(f"[API] 用户 {current_user} 请求删除录播机服务器: {request.recName} ({request.recType})")
@@ -449,73 +384,60 @@ async def delete_server(
 async def batch_delete_servers(
     request: BatchDeleteServerRequest,
     current_user: str = Depends(get_current_user),
-    config: Dict = Depends(get_config),
-    logger = Depends(get_logger)
+    config: dict[str, Any] = Depends(get_config),
+    logger: logging.Logger = Depends(get_logger)
 ):
     """批量删除录播机 (使用依赖注入的 logger)"""
     logger.debug(f"[API] 用户 {current_user} 请求批量删除录播机服务器，共 {len(request.servers)} 个")
     
-    all_results = []
-    failed_servers = []
-    deleted_server_configs = {}
+    all_results: list[dict[str, Any]] = []
+    failed_servers: list[dict[str, Any]] = []
+    deleted_server_keys: set[tuple[str, str]] = set()
+    snapshot = copy.deepcopy(config)
     
     # 在内存中尝试删除
     for server_request in request.servers:
         config_key = server_request.recType.upper()
         recName = server_request.recName
-        if config_key in config and recName in config[config_key]:
-            if (config_key, recName) not in deleted_server_configs:
-                 deleted_server_configs[(config_key, recName)] = config[config_key][recName].copy()
-            try:
-                del config[config_key][recName]
-                logger.info(f"[API] 批量删除: {recName} ({server_request.recType}) 成功 (内存)")
-            except Exception as e:
-                 logger.error(f"[API] 批量删除: 内存中删除 {recName} 失败: {e}")
-                 failed_servers.append({
-                    "recName": recName,
-                    "recType": server_request.recType,
-                    "error": f"内存删除失败: {e}"
-                 })
+        section_value = config.get(config_key)
+        if isinstance(section_value, dict) and recName in section_value:
+            del section_value[recName]
+            deleted_server_keys.add((config_key, recName))
+            logger.info(f"[API] 批量删除: {recName} ({server_request.recType}) 成功 (内存)")
         else:
-             logger.warning(f"[API] 批量删除: 服务器 {recName} ({server_request.recType}) 在配置中未找到")
-             failed_servers.append({
-                 "recName": recName,
-                 "recType": server_request.recType,
-                 "error": "服务器未找到"
-             })
+            logger.warning(f"[API] 批量删除: 服务器 {recName} ({server_request.recType}) 在配置中未找到")
+            failed_servers.append({
+                "recName": recName,
+                "recType": server_request.recType,
+                "error": "服务器未找到"
+            })
 
     # 如果有任何删除操作，尝试保存配置
-    if deleted_server_configs: 
+    if deleted_server_keys: 
         if not save_config(config):
             logger.error("[API] 批量删除服务器后保存配置文件失败，正在回滚内存更改...")
-            for (config_key, recName), original_value in deleted_server_configs.items():
-                try:
-                    if config_key not in config:
-                        config[config_key] = {}
-                    config[config_key][recName] = original_value
-                except Exception as e:
-                    logger.error(f"[API] 回滚删除的服务器 {recName} 失败: {e}")
+            _restore_config(config, snapshot)
             logger.info("[API] 批量删除回滚完成")
             all_results = []
-            final_failed_servers = []
+            final_failed_servers: list[dict[str, Any]] = []
             for server_request in request.servers:
-                 final_failed_servers.append({
+                final_failed_servers.append({
                     "recName": server_request.recName,
                     "recType": server_request.recType,
                     "error": "保存配置文件失败"
-                 })
+                })
             failed_servers = final_failed_servers
         else:
-             logger.info("[API] 批量删除服务器后保存配置文件成功")
-             for server_request in request.servers:
-                 server_key = (server_request.recType.upper(), server_request.recName)
-                 if server_key in deleted_server_configs and \
+            logger.info("[API] 批量删除服务器后保存配置文件成功")
+            for server_request in request.servers:
+                server_key = (server_request.recType.upper(), server_request.recName)
+                if server_key in deleted_server_keys and \
                     not any(f["recName"] == server_request.recName and f["recType"] == server_request.recType for f in failed_servers):
-                     all_results.append({
-                         "recName": server_request.recName,
-                         "recType": server_request.recType,
-                         "success": True
-                     })
+                    all_results.append({
+                        "recName": server_request.recName,
+                        "recType": server_request.recType,
+                        "success": True
+                    })
 
     return {
         "success": len(all_results) > 0,
