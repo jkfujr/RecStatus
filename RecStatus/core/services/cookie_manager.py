@@ -28,6 +28,11 @@ class CurrentCookieData(TypedDict):
     dedeUserId: str | None
 
 
+class CookieFetchResult(TypedDict):
+    cookie: str
+    dedeUserId: str
+
+
 def _new_string_list() -> list[str]:
     return []
 
@@ -56,6 +61,7 @@ class CookieManager:
         self._cookie_updates_batch: defaultdict[str, list[str]] = defaultdict(_new_string_list)
         self._cycle_completed_counter = 0
         self._server_health: defaultdict[str, ServerHealth] = defaultdict(_new_server_health)
+        self._recorder_cookie_tag_uids: dict[str, str] = {}
 
     async def start(self) -> None:
         if self.running:
@@ -118,11 +124,17 @@ class CookieManager:
                     continue
                 
                 cookie_data = await self._get_current_recheme_cookie(recheme_api, silent=True)
-                if cookie_data and cookie_data.get("dedeUserId"):
-                    dede_user_id = cookie_data["dedeUserId"]
-                    user_key = f"uid_{dede_user_id}"
-                    if instance["rec_name"] not in self._user_instances[user_key]:
-                        self._user_instances[user_key].append(instance["rec_name"])
+                if not cookie_data:
+                    continue
+
+                dede_user_id = cookie_data.get("dedeUserId")
+                if not dede_user_id:
+                    continue
+
+                user_key = f"uid_{dede_user_id}"
+                if instance["rec_name"] not in self._user_instances[user_key]:
+                    self._user_instances[user_key].append(instance["rec_name"])
+                self._recorder_cookie_tag_uids[instance["rec_name"]] = dede_user_id
             except Exception as e:
                 logger.error(f"[Cookie管理器] 预扫描 {instance['rec_name']} 失败: {e}")
         
@@ -290,7 +302,9 @@ class CookieManager:
                 else:
                     logger.debug(f"[Cookie管理器] {rec_name}: 开始检查/更新 Cookie")
                 
+                fetch_result: CookieFetchResult | None = None
                 new_cookie: str | None = None
+                new_dede_user_id: str | None = None
                 current_cookie_data: CurrentCookieData | None = None
                 current_cookie_str: str | None = None
                 current_dede_user_id: str | None = None
@@ -313,7 +327,7 @@ class CookieManager:
                                 self._logged_cookies.add(log_key)
 
                 if (mode == "onlysync" and current_dede_user_id) or mode == "random":
-                    new_cookie = await self._get_cookie_from_server(
+                    fetch_result = await self._get_cookie_from_server(
                         cookie_server_url,
                         cookie_server_token,
                         mode,
@@ -321,24 +335,45 @@ class CookieManager:
                         request_timeout,
                         max_retries
                     )
+                    if fetch_result:
+                        new_cookie = fetch_result["cookie"]
+                        new_dede_user_id = fetch_result["dedeUserId"]
 
                 if new_cookie:
                     if mode == "random":
                         current_cookie_data_compare = await self._get_current_recheme_cookie(recheme_api)
                         if current_cookie_data_compare:
                             current_cookie_str = current_cookie_data_compare.get("cookie")
+                            current_dede_user_id = current_cookie_data_compare.get("dedeUserId")
                     elif current_cookie_data:
                         current_cookie_str = current_cookie_data.get("cookie")
 
+                    old_tag_dede_user_id = self._recorder_cookie_tag_uids.get(rec_name) or current_dede_user_id
                     if current_cookie_str is None or new_cookie != current_cookie_str:
                         success = await self._update_recheme_cookie(recheme_api, new_cookie)
                         if success:
                             uid_key = "random" if mode == "random" else current_dede_user_id or "unknown"
                             self._cookie_updates_batch[uid_key].append(rec_name)
+                            await self._sync_recorder_cookie_tag(
+                                cookie_server_url,
+                                cookie_server_token,
+                                rec_name,
+                                old_tag_dede_user_id,
+                                new_dede_user_id,
+                                request_timeout
+                            )
                             
                         if rec_name not in self._cookie_results["updated"]:
                             self._cookie_results["updated"].append(rec_name)
                     else:
+                        await self._sync_recorder_cookie_tag(
+                            cookie_server_url,
+                            cookie_server_token,
+                            rec_name,
+                            old_tag_dede_user_id,
+                            new_dede_user_id,
+                            request_timeout
+                        )
                         if rec_name not in self._cookie_results["unchanged"]:
                             self._cookie_results["unchanged"].append(rec_name)
                 else:
@@ -387,7 +422,7 @@ class CookieManager:
         dede_user_id: str | None = None,
         timeout: int = 10,
         max_retries: int = 3
-    ) -> str | None:
+    ) -> CookieFetchResult | None:
         """
         从 Cookie 服务器 v2 API 获取 Cookie，支持超时重试。
         """
@@ -441,6 +476,7 @@ class CookieManager:
 
                     if mode == "random":
                         cookie_value = data.get("header_string")
+                        response_dede_user_id = data.get("DedeUserID")
                     else:
                         managed = data.get("managed")
                         if not isinstance(managed, dict):
@@ -448,10 +484,16 @@ class CookieManager:
                             self._update_server_health(health_key)
                             return None
                         cookie_value = managed.get("header_string")
+                        response_dede_user_id = dede_user_id
+
+                    if not isinstance(response_dede_user_id, str) or not response_dede_user_id:
+                        logger.warning(f"[Cookie管理器] v2 API 响应缺少 DedeUserID: {data}")
+                        self._update_server_health(health_key)
+                        return None
 
                     if isinstance(cookie_value, str) and cookie_value:
                         self._reset_server_health(health_key)
-                        return cookie_value
+                        return {"cookie": cookie_value, "dedeUserId": response_dede_user_id}
 
                     logger.warning(f"[Cookie管理器] v2 API 响应缺少 header_string: {data}")
                     self._update_server_health(health_key)
@@ -479,6 +521,123 @@ class CookieManager:
 
         logger.error(f"[Cookie管理器] 请求Cookie服务器失败，已重试{max_retries}次")
         return None
+
+    async def _sync_recorder_cookie_tag(
+        self,
+        server_url: str,
+        token: str | None,
+        rec_name: str,
+        old_dede_user_id: str | None,
+        new_dede_user_id: str | None,
+        timeout: int
+    ) -> None:
+        """同步录播姬占用标签，失败只记录日志。"""
+        if not old_dede_user_id and not new_dede_user_id:
+            return
+
+        tag = self._recorder_cookie_tag(rec_name)
+        success = True
+
+        if old_dede_user_id and old_dede_user_id != new_dede_user_id:
+            success = await self._set_cookie_tag(server_url, token, old_dede_user_id, tag, False, timeout) and success
+
+        if new_dede_user_id:
+            success = await self._set_cookie_tag(server_url, token, new_dede_user_id, tag, True, timeout) and success
+
+        if success and new_dede_user_id:
+            self._recorder_cookie_tag_uids[rec_name] = new_dede_user_id
+        elif old_dede_user_id:
+            self._recorder_cookie_tag_uids[rec_name] = old_dede_user_id
+
+    def _recorder_cookie_tag(self, rec_name: str) -> str:
+        return f"录播姬-{rec_name}"
+
+    async def _set_cookie_tag(
+        self,
+        server_url: str,
+        token: str | None,
+        dede_user_id: str,
+        tag: str,
+        add: bool,
+        timeout: int
+    ) -> bool:
+        session = self.session
+        if not session or session.closed:
+            logger.warning("[Cookie管理器] HTTP 会话未启动，无法同步 Cookie 标签")
+            return False
+
+        headers: dict[str, str] = {}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        cookie_url = urljoin(server_url, f"/api/v1/cookies/{dede_user_id}")
+        request_timeout = aiohttp.ClientTimeout(total=timeout)
+
+        try:
+            async with session.get(cookie_url, headers=headers, timeout=request_timeout) as response:
+                if response.status == 404:
+                    action = "添加" if add else "移除"
+                    logger.warning(f"[Cookie管理器] Cookie DedeUserID={dede_user_id} 不存在，无法{action}标签 {tag}")
+                    return not add
+                if response.status != 200:
+                    logger.warning(f"[Cookie管理器] 读取 Cookie 标签失败: DedeUserID={dede_user_id}, 状态码={response.status}")
+                    return False
+
+                data = await response.json()
+
+            if not isinstance(data, dict):
+                logger.warning(f"[Cookie管理器] Cookie 标签响应不是对象: DedeUserID={dede_user_id}")
+                return False
+
+            managed = data.get("managed")
+            if not isinstance(managed, dict):
+                logger.warning(f"[Cookie管理器] Cookie 标签响应缺少 managed 对象: DedeUserID={dede_user_id}")
+                return False
+
+            tags = self._normalize_cookie_tags(managed.get("tags", []))
+            if add:
+                if tag in tags:
+                    return True
+                next_tags = [*tags, tag]
+            else:
+                if tag not in tags:
+                    return True
+                next_tags = [item for item in tags if item != tag]
+
+            tags_url = urljoin(server_url, f"/api/v1/cookies/{dede_user_id}/tags")
+            async with session.patch(tags_url, headers=headers, json={"tags": next_tags}, timeout=request_timeout) as response:
+                if response.status == 200:
+                    return True
+
+                action = "添加" if add else "移除"
+                logger.warning(f"[Cookie管理器] {action} Cookie 标签失败: DedeUserID={dede_user_id}, 状态码={response.status}, 标签={tag}")
+                return False
+
+        except asyncio.TimeoutError:
+            logger.warning(f"[Cookie管理器] 同步 Cookie 标签超时: DedeUserID={dede_user_id}, 标签={tag}")
+            return False
+        except aiohttp.ClientError as e:
+            logger.warning(f"[Cookie管理器] 同步 Cookie 标签请求失败: DedeUserID={dede_user_id}, 标签={tag}, 错误={e}")
+            return False
+        except Exception as e:
+            logger.warning(f"[Cookie管理器] 同步 Cookie 标签失败: DedeUserID={dede_user_id}, 标签={tag}, 错误={e}", exc_info=True)
+            return False
+
+    def _normalize_cookie_tags(self, tags_value: Any) -> list[str]:
+        if not isinstance(tags_value, list):
+            return []
+
+        tags: list[str] = []
+        seen: set[str] = set()
+        for item in tags_value:
+            if not isinstance(item, str):
+                continue
+            tag = item.strip()
+            if not tag or tag in seen:
+                continue
+            seen.add(tag)
+            tags.append(tag)
+        return tags
 
     def _reset_server_health(self, health_key: str) -> None:
         server_health = self._server_health[health_key]
