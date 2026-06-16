@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+aiohttp
+PyJWT
+ruamel.yaml
+pydantic

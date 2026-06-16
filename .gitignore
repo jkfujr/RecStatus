@@ -8,6 +8,10 @@ Build
 dist
 * copy.*
 .*
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
+!.dockerignore
 config.yaml
 config2.yaml
 RecStatus/data/config.json

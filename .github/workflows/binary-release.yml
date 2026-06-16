@@ -1,0 +1,147 @@
+name: Binary Release
+
+on:
+  push:
+    branches:
+      - dev
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-webui:
+    name: Build WebUI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Build WebUI
+        working-directory: ./RecStatus-web
+        run: |
+          npm install
+          npm run build
+
+      - name: Upload WebUI Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: webui-dist
+          path: ./RecStatus-web/dist
+
+  build-backend:
+    name: Build Backend
+    needs: build-webui
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+            sep: ";"
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+            sep: ":"
+          - os: macos-latest
+            platform: osx
+            arch: arm64
+            sep: ":"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download WebUI Artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: webui-dist
+          path: ./RecStatus/web
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build with PyInstaller
+        working-directory: ./RecStatus
+        run: |
+          pyinstaller --onefile --name "RecStatus-${{ matrix.platform }}-${{ matrix.arch }}" --add-data "web${{ matrix.sep }}web" --hidden-import ruamel.yaml --hidden-import uvicorn.logging --hidden-import uvicorn.loops.auto --hidden-import uvicorn.protocols.http.auto --hidden-import uvicorn.protocols.websockets.auto --hidden-import uvicorn.lifespan.on main.py
+
+      - name: Prepare Artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd RecStatus/dist
+          zip -r ../../RecStatus-${{ matrix.platform }}-${{ matrix.arch }}.zip RecStatus-${{ matrix.platform }}-${{ matrix.arch }}
+
+      - name: Prepare Artifacts (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd RecStatus/dist
+          Compress-Archive -Path "RecStatus-${{ matrix.platform }}-${{ matrix.arch }}.exe" -DestinationPath "../../RecStatus-${{ matrix.platform }}-${{ matrix.arch }}.zip"
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: RecStatus-${{ matrix.platform }}-${{ matrix.arch }}
+          path: RecStatus-${{ matrix.platform }}-${{ matrix.arch }}.zip
+
+  release:
+    name: Release
+    needs: build-backend
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || startsWith(github.ref, 'refs/tags/'))
+    steps:
+      - name: Checkout
+        if: github.ref == 'refs/heads/dev'
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Update Nightly Tag
+        if: github.ref == 'refs/heads/dev'
+        run: |
+          git tag -f nightly "${GITHUB_SHA}"
+          git push -f origin nightly
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Display Artifacts
+        run: ls -R artifacts
+
+      - name: Create Release (Tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: artifacts/**/*.zip
+          prerelease: false
+          generate_release_notes: true
+
+      - name: Create Release (Nightly)
+        if: github.ref == 'refs/heads/dev'
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: nightly
+          name: Nightly Build
+          body: |
+            Automatic nightly build from dev branch.
+            Commit: ${{ github.sha }}
+            Time: ${{ github.event.head_commit.timestamp }}
+          files: artifacts/**/*.zip
+          prerelease: true
+          make_latest: false

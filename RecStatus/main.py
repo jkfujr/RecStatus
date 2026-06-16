@@ -1,6 +1,5 @@
 import logging
 import sys, uvicorn
-from pathlib import Path
 from typing import Any
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,14 +12,12 @@ from core.services.auth import Auth
 from core.services.cookie_manager import CookieManager
 from core.config_manager import load_config
 from core.dependencies import setup_dependencies, get_logger
+from core.paths import WEB_DIR
 
 from core.routers import room as room_router
 from core.routers import server as server_router
 from core.routers import auth as auth_router
 from core.routers import config as config_router
-
-BASE_DIR = Path(__file__).resolve().parent
-WEB_DIR = BASE_DIR / "web"
 
 # === 全局变量 ===
 _config: dict[str, Any] | None = None
@@ -145,7 +142,7 @@ if __name__ == "__main__":
         sys.exit(1)
         
     uvicorn.run(
-        "main:app",
+        app,
         host=host,
         port=port,
         log_level="info",

@@ -2,6 +2,8 @@ import os, logging, shutil
 
 from logging.handlers import TimedRotatingFileHandler
 
+from core.paths import LOG_DIR
+
 class DiskSpaceCheckHandler(TimedRotatingFileHandler):
     """检查磁盘空间的日志处理器"""
     
@@ -71,8 +73,7 @@ def log():
 
     logger.setLevel(logging.DEBUG)
 
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    log_directory = os.path.abspath(os.path.join(script_directory, '..', 'logs'))
+    log_directory = str(LOG_DIR.resolve())
     
     if not os.path.exists(log_directory):
         try:

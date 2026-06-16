@@ -7,11 +7,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from core.logs import log_print
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-CONFIG_FILE = DATA_DIR / "config.json"
-LEGACY_CONFIG_FILE = BASE_DIR / "config.yaml"
+from core.paths import CONFIG_FILE, DATA_DIR, LEGACY_CONFIG_FILE
 
 
 def _random_secret(length: int = 32) -> str:

@@ -1,0 +1,15 @@
+.git
+.github
+.docs
+.vscode
+__pycache__
+*.pyc
+node_modules
+RecStatus-web
+RecStatus/logs
+RecStatus/data
+RecStatus/config.yaml
+RecStatus/config.yaml.bak
+RecStatus/config.yaml.*.bak
+Build
+dist
