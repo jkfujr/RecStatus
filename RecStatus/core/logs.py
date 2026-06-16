@@ -55,23 +55,10 @@ class DiskSpaceCheckHandler(TimedRotatingFileHandler):
 
 def _check_disk_space(directory):
     """检查磁盘空间的通用函数"""
-    # 方法1: 使用os.statvfs (Unix/Linux通用)
-    if hasattr(os, 'statvfs'):
-        try:
-            statvfs = os.statvfs(directory)
-            return (statvfs.f_frsize * statvfs.f_bavail) / (1024 * 1024)
-        except OSError:
-            pass
-    
-    # 方法2: 使用psutil (如果可用)
     try:
-        import psutil
-        return psutil.disk_usage(directory).free / (1024 * 1024)
-    except (ImportError, OSError):
-        pass
-        
-    # 方法3: 返回安全值，避免阻塞
-    return 1000
+        return shutil.disk_usage(directory).free / (1024 * 1024)
+    except OSError:
+        return 1000
 
 def log():
     """
@@ -131,13 +118,14 @@ def log():
 
     return logger
 
-def log_print(message, level="INFO"):
+def log_print(message, level="INFO", exc_info=False):
     """
     记录日志并输出到控制台。
 
     参数:
     - message (str): 需要记录的消息内容。
     - level (str): 日志等级，默认为 'INFO'。可以设置为 'DEBUG'，'INFO'，'WARNING'，'ERROR'，'CRITICAL'。
+    - exc_info (bool): 是否记录当前异常堆栈。
     """
     logger = logging.getLogger()
     
@@ -145,7 +133,7 @@ def log_print(message, level="INFO"):
         level = getattr(logging, level.upper(), logging.INFO)
 
     try:
-        logger.log(level, message)
+        logger.log(level, message, exc_info=exc_info)
     except Exception as e:
         print(f"日志写入失败: {e}")
     
