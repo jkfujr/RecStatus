@@ -330,11 +330,8 @@ class CookieManager:
                     elif current_cookie_data:
                         current_cookie_str = current_cookie_data.get("cookie")
 
-                    # 智能合并cookie，如果本地缺少buvid字段则添加
-                    merged_cookie = self._merge_cookies_intelligently(current_cookie_str, new_cookie)
-                    
-                    if current_cookie_str is None or merged_cookie != current_cookie_str:
-                        success = await self._update_recheme_cookie(recheme_api, merged_cookie)
+                    if current_cookie_str is None or new_cookie != current_cookie_str:
+                        success = await self._update_recheme_cookie(recheme_api, new_cookie)
                         if success:
                             uid_key = "random" if mode == "random" else current_dede_user_id or "unknown"
                             self._cookie_updates_batch[uid_key].append(rec_name)
@@ -539,64 +536,6 @@ class CookieManager:
             if not silent:
                 logger.error(f"[Cookie管理器] 获取录播姬 {recheme_api.name} 当前 Cookie 失败: {e}", exc_info=True)
             return None
-
-    def _merge_cookies_intelligently(self, current_cookie: str | None, new_cookie: str | None) -> str:
-        """智能合并cookie，如果本地缺少buvid字段则从新cookie中添加"""
-        if not current_cookie:
-            return new_cookie or ""
-        if not new_cookie:
-            return current_cookie
-            
-        # 解析当前cookie
-        current_cookies = self._parse_cookie_string(current_cookie)
-        new_cookies = self._parse_cookie_string(new_cookie)
-        
-        # 检查是否需要添加buvid字段
-        buvid_fields = ['buvid3', 'buvid4']
-        needs_update = False
-        
-        for field in buvid_fields:
-            if field not in current_cookies and field in new_cookies:
-                current_cookies[field] = new_cookies[field]
-                needs_update = True
-                logger.debug(f"[Cookie管理器] 添加缺失的{field}字段: {new_cookies[field][:20]}...")
-        
-        if needs_update:
-            cookie_parts = []
-            core_fields = ['DedeUserID', 'DedeUserID__ckMd5', 'SESSDATA', 'bili_jct']
-            for field in core_fields:
-                if field in current_cookies:
-                    cookie_parts.append(f"{field}={current_cookies[field]}")
-            
-            # 添加buvid字段
-            for field in buvid_fields:
-                if field in current_cookies:
-                    cookie_parts.append(f"{field}={current_cookies[field]}")
-            
-            # 添加其他字段
-            for field, value in current_cookies.items():
-                if field not in core_fields and field not in buvid_fields:
-                    cookie_parts.append(f"{field}={value}")
-            
-            return "; ".join(cookie_parts) + ";"
-        
-        return current_cookie
-    
-    def _parse_cookie_string(self, cookie_str: str | None) -> dict[str, str]:
-        """解析cookie字符串为字典"""
-        cookies: dict[str, str] = {}
-        if not cookie_str:
-            return cookies
-            
-        # 移除末尾的分号并分割
-        parts = cookie_str.rstrip(';').split(';')
-        for part in parts:
-            part = part.strip()
-            if '=' in part:
-                key, value = part.split('=', 1)
-                cookies[key.strip()] = value.strip()
-        
-        return cookies
 
     def _log_dede_user_id_details(self, dede_user_id: str) -> None:
         """记录 DedeUserID 及其关联实例的详细信息"""
