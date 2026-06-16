@@ -1,25 +1,30 @@
 <template>
-  <div class="settings-page">
-    <div class="settings-header">
-      <div>
-        <h2>系统设置</h2>
-        <p>全局配置保存到后端 data/config.json</p>
-      </div>
-      <div class="header-actions">
-        <n-button :loading="loading" @click="loadConfig">
-          <template #icon>
-            <n-icon><RefreshOutline /></n-icon>
-          </template>
-          刷新
-        </n-button>
-        <n-button type="primary" :loading="saving" @click="saveConfig">
-          <template #icon>
-            <n-icon><CreateOutline /></n-icon>
-          </template>
-          保存
-        </n-button>
-      </div>
-    </div>
+  <div v-if="!canViewSettings" class="settings-login-state">
+    <n-result status="403" title="请登录" />
+  </div>
+
+  <div v-else class="settings-page">
+    <n-page-header title="系统设置">
+      <template #subtitle>
+        <n-text depth="3">全局配置保存到后端 data/config.json</n-text>
+      </template>
+      <template #extra>
+        <n-space>
+          <n-button :loading="loading" @click="loadConfig">
+            <template #icon>
+              <n-icon><RefreshOutline /></n-icon>
+            </template>
+            刷新
+          </n-button>
+          <n-button type="primary" :loading="saving" @click="saveConfig">
+            <template #icon>
+              <n-icon><CreateOutline /></n-icon>
+            </template>
+            保存
+          </n-button>
+        </n-space>
+      </template>
+    </n-page-header>
 
     <n-alert v-if="restartRequired" type="warning" class="restart-alert" closable>
       监听地址或端口已保存，重启服务后生效
@@ -28,26 +33,35 @@
     <n-spin :show="loading">
       <n-form label-placement="left" label-width="140" require-mark-placement="right-hanging">
         <n-card title="基础监听" class="setting-section">
-          <div class="form-grid">
+          <n-grid responsive="screen" cols="1 m:2" :x-gap="24" :y-gap="4">
+            <n-gi>
             <n-form-item label="监听地址">
               <n-input v-model:value="form.HOST" placeholder="0.0.0.0" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="监听端口">
               <n-input-number v-model:value="form.PORT" :min="1" :max="65535" />
             </n-form-item>
-          </div>
+            </n-gi>
+          </n-grid>
         </n-card>
 
         <n-card title="认证" class="setting-section">
-          <div class="form-grid">
+          <n-grid responsive="screen" cols="1 m:2" :x-gap="24" :y-gap="4">
+            <n-gi>
             <n-form-item label="启用认证">
               <n-switch v-model:value="form.AUTH.ENABLE" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="Token 过期分钟">
               <n-input-number v-model:value="form.AUTH.AUTH_KEY_EXPIRE" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="认证密钥">
-              <div class="secret-row">
+              <n-space class="field-actions" align="center" :wrap="false">
                 <n-input
                   v-model:value="form.AUTH.AUTH_KEY"
                   type="password"
@@ -58,56 +72,78 @@
                 <n-tag v-if="form.AUTH.clearAuthKey" type="warning" closable @close="form.AUTH.clearAuthKey = false">
                   将清空
                 </n-tag>
-              </div>
+              </n-space>
             </n-form-item>
-          </div>
+            </n-gi>
+          </n-grid>
 
-          <div class="sub-header">
-            <span>用户</span>
+          <n-space class="section-toolbar" align="center" justify="space-between">
+            <n-text strong>用户</n-text>
             <n-button size="small" type="primary" @click="addUser">
               <template #icon>
                 <n-icon><AddOutline /></n-icon>
               </template>
               添加用户
             </n-button>
-          </div>
+          </n-space>
 
-          <div class="user-list">
-            <div v-for="(user, index) in form.AUTH.users" :key="user.id" class="user-row">
-              <n-input v-model:value="user.key" placeholder="配置名" />
-              <n-input v-model:value="user.USER" placeholder="登录用户名" />
-              <n-input
-                v-model:value="user.PASS"
-                type="password"
-                show-password-on="click"
-                placeholder="留空则保留密码"
-              />
-              <n-button secondary @click="user.clearPass = true">清空密码</n-button>
-              <n-button circle secondary type="error" @click="removeUser(index)">
-                <template #icon>
-                  <n-icon><TrashOutline /></n-icon>
-                </template>
-              </n-button>
-              <n-tag v-if="user.clearPass" type="warning" closable @close="user.clearPass = false">
-                将清空密码
-              </n-tag>
-            </div>
-          </div>
+          <n-list bordered>
+            <n-list-item v-for="(user, index) in form.AUTH.users" :key="user.id">
+              <n-grid responsive="screen" cols="1 s:2 l:6" :x-gap="8" :y-gap="8" item-responsive>
+                <n-gi>
+                  <n-input v-model:value="user.key" placeholder="配置名" />
+                </n-gi>
+                <n-gi>
+                  <n-input v-model:value="user.USER" placeholder="登录用户名" />
+                </n-gi>
+                <n-gi span="1 s:2 l:2">
+                  <n-input
+                    v-model:value="user.PASS"
+                    type="password"
+                    show-password-on="click"
+                    placeholder="留空则保留密码"
+                  />
+                </n-gi>
+                <n-gi>
+                  <n-space align="center" :wrap="false">
+                    <n-button secondary @click="user.clearPass = true">清空密码</n-button>
+                    <n-button circle secondary type="error" @click="removeUser(index)">
+                      <template #icon>
+                        <n-icon><TrashOutline /></n-icon>
+                      </template>
+                    </n-button>
+                  </n-space>
+                </n-gi>
+                <n-gi>
+                  <n-tag v-if="user.clearPass" type="warning" closable @close="user.clearPass = false">
+                    将清空密码
+                  </n-tag>
+                </n-gi>
+              </n-grid>
+            </n-list-item>
+          </n-list>
         </n-card>
 
         <n-card title="全局 Cookie" class="setting-section">
-          <div class="form-grid">
+          <n-grid responsive="screen" cols="1 m:2" :x-gap="24" :y-gap="4">
+            <n-gi>
             <n-form-item label="启用 Cookie">
               <n-switch v-model:value="form.COOKIE.ENABLE" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="配置块名称">
               <n-input v-model:value="form.COOKIE.name" placeholder="C1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="服务器地址/值">
               <n-input v-model:value="form.COOKIE.VALUE" placeholder="http://127.0.0.1:18000" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="Token">
-              <div class="secret-row">
+              <n-space class="field-actions" align="center" :wrap="false">
                 <n-input
                   v-model:value="form.COOKIE.TOKEN"
                   type="password"
@@ -118,39 +154,57 @@
                 <n-tag v-if="form.COOKIE.clearToken" type="warning" closable @close="form.COOKIE.clearToken = false">
                   将清空
                 </n-tag>
-              </div>
+              </n-space>
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="模式">
               <n-select v-model:value="form.COOKIE.MODE" :options="cookieModeOptions" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="检查间隔秒">
               <n-input-number v-model:value="form.COOKIE.CHECK_INTERVAL" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="随机更换间隔秒">
               <n-input-number v-model:value="form.COOKIE.RANDOM_CHANGE_INTERVAL" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="请求超时秒">
               <n-input-number v-model:value="form.COOKIE.REQUEST_TIMEOUT" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="最大重试次数">
               <n-input-number v-model:value="form.COOKIE.MAX_RETRIES" :min="0" />
             </n-form-item>
-          </div>
+            </n-gi>
+          </n-grid>
         </n-card>
 
         <n-card title="录播姬全局设置" class="setting-section">
-          <div class="form-grid">
+          <n-grid responsive="screen" cols="1 m:2" :x-gap="24" :y-gap="4">
+            <n-gi>
             <n-form-item label="隐藏 URL">
               <n-switch v-model:value="form.RECHEME.URL_HIDDEN" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="启用 Basic">
               <n-switch v-model:value="form.RECHEME.BASIC" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="Basic 用户">
               <n-input v-model:value="form.RECHEME.BASIC_USER" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="Basic 密码">
-              <div class="secret-row">
+              <n-space class="field-actions" align="center" :wrap="false">
                 <n-input
                   v-model:value="form.RECHEME.BASIC_PASS"
                   type="password"
@@ -166,24 +220,32 @@
                 >
                   将清空
                 </n-tag>
-              </div>
+              </n-space>
             </n-form-item>
-          </div>
+            </n-gi>
+          </n-grid>
 
           <n-divider />
 
-          <div class="form-grid">
+          <n-grid responsive="screen" cols="1 m:2" :x-gap="24" :y-gap="4">
+            <n-gi>
             <n-form-item label="启用 Cookie">
               <n-switch v-model:value="form.RECHEME_COOKIE.ENABLE" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="配置块名称">
               <n-input v-model:value="form.RECHEME_COOKIE.name" placeholder="C1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="服务器地址/值">
               <n-input v-model:value="form.RECHEME_COOKIE.VALUE" placeholder="http://127.0.0.1:18000" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="Token">
-              <div class="secret-row">
+              <n-space class="field-actions" align="center" :wrap="false">
                 <n-input
                   v-model:value="form.RECHEME_COOKIE.TOKEN"
                   type="password"
@@ -199,36 +261,52 @@
                 >
                   将清空
                 </n-tag>
-              </div>
+              </n-space>
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="模式">
               <n-select v-model:value="form.RECHEME_COOKIE.MODE" :options="cookieModeOptions" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="检查间隔秒">
               <n-input-number v-model:value="form.RECHEME_COOKIE.CHECK_INTERVAL" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="随机更换间隔秒">
               <n-input-number v-model:value="form.RECHEME_COOKIE.RANDOM_CHANGE_INTERVAL" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="请求超时秒">
               <n-input-number v-model:value="form.RECHEME_COOKIE.REQUEST_TIMEOUT" :min="1" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="最大重试次数">
               <n-input-number v-model:value="form.RECHEME_COOKIE.MAX_RETRIES" :min="0" />
             </n-form-item>
-          </div>
+            </n-gi>
+          </n-grid>
         </n-card>
 
         <n-card title="BLREC 全局设置" class="setting-section">
-          <div class="form-grid">
+          <n-grid responsive="screen" cols="1 m:2" :x-gap="24" :y-gap="4">
+            <n-gi>
             <n-form-item label="隐藏 URL">
               <n-switch v-model:value="form.BLREC.URL_HIDDEN" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="启用 Basic">
               <n-switch v-model:value="form.BLREC.BASIC" />
             </n-form-item>
+            </n-gi>
+            <n-gi>
             <n-form-item label="API 密钥">
-              <div class="secret-row">
+              <n-space class="field-actions" align="center" :wrap="false">
                 <n-input
                   v-model:value="form.BLREC.BASIC_KEY"
                   type="password"
@@ -244,9 +322,10 @@
                 >
                   将清空
                 </n-tag>
-              </div>
+              </n-space>
             </n-form-item>
-          </div>
+            </n-gi>
+          </n-grid>
         </n-card>
       </n-form>
     </n-spin>
@@ -264,16 +343,25 @@ import {
   NIcon,
   NInput,
   NInputNumber,
+  NGi,
+  NGrid,
+  NList,
+  NListItem,
+  NPageHeader,
+  NResult,
   NSelect,
+  NSpace,
   NSpin,
   NSwitch,
   NTag,
+  NText,
   useMessage
 } from 'naive-ui'
 import { AddOutline, CreateOutline, RefreshOutline, TrashOutline } from '@vicons/ionicons5'
-import { onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { fetchSystemConfig, updateSystemConfig } from '@/lib/utils/api'
 import type { CookieBlockConfig, CookieConfig, SystemConfig } from '@/lib/types/api'
+import { useAuthStore } from '@/lib/store/auth'
 
 interface UserForm {
   id: number
@@ -324,9 +412,11 @@ interface SettingsForm {
 }
 
 const message = useMessage()
+const authStore = useAuthStore()
 const loading = ref(false)
 const saving = ref(false)
 const restartRequired = ref(false)
+const canViewSettings = computed(() => authStore.checked && authStore.isAuthenticated)
 let userId = 0
 
 const cookieModeOptions = [
@@ -523,6 +613,8 @@ function buildPayload(): Partial<SystemConfig> {
 }
 
 async function loadConfig() {
+  if (!canViewSettings.value) return
+
   loading.value = true
   try {
     const response = await fetchSystemConfig()
@@ -561,9 +653,14 @@ async function saveConfig() {
   }
 }
 
-onMounted(() => {
-  loadConfig()
-})
+watch(canViewSettings, async canView => {
+  if (canView) {
+    await loadConfig()
+    return
+  }
+
+  restartRequired.value = false
+}, { immediate: true })
 </script>
 
 <style scoped lang="scss">
@@ -573,91 +670,37 @@ onMounted(() => {
   padding: 24px;
 }
 
-.settings-header {
+.settings-login-state {
+  min-height: calc(100vh - 104px);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-
-  h2 {
-    margin: 0;
-    font-size: 22px;
-    font-weight: 600;
-  }
-
-  p {
-    margin: 6px 0 0;
-    color: var(--text-color-secondary);
-  }
-}
-
-.header-actions {
-  display: flex;
-  gap: 8px;
+  justify-content: center;
 }
 
 .restart-alert {
-  margin-bottom: 16px;
+  margin: 16px 0;
 }
 
 .setting-section {
-  margin-bottom: 16px;
+  margin-top: 16px;
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 24px;
-}
-
-.secret-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 8px;
+.field-actions {
   width: 100%;
 }
 
-.sub-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.field-actions :deep(.n-input) {
+  flex: 1;
+  min-width: 0;
+}
+
+.section-toolbar {
   margin: 8px 0 12px;
-  font-weight: 600;
-}
-
-.user-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.user-row {
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) minmax(160px, 1fr) auto auto auto;
-  align-items: center;
-  gap: 8px;
 }
 
 @media (max-width: 900px) {
   .settings-page {
     padding: 16px;
-  }
-
-  .settings-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .header-actions {
-    justify-content: flex-end;
-  }
-
-  .form-grid,
-  .user-row,
-  .secret-row {
-    grid-template-columns: 1fr;
   }
 }
 </style>

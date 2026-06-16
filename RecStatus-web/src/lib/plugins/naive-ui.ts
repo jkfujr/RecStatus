@@ -21,7 +21,16 @@ import {
   NDescriptions,
   NDescriptionsItem,
   NDataTable,
-  NAlert
+  NAlert,
+  NGi,
+  NGlobalStyle,
+  NGrid,
+  NList,
+  NListItem,
+  NPageHeader,
+  NResult,
+  NSpace,
+  NText
 } from 'naive-ui'
 
 export default create({
@@ -47,6 +56,15 @@ export default create({
     NDescriptions,
     NDescriptionsItem,
     NDataTable,
-    NAlert
+    NAlert,
+    NGi,
+    NGlobalStyle,
+    NGrid,
+    NList,
+    NListItem,
+    NPageHeader,
+    NResult,
+    NSpace,
+    NText
   ]
-}) 
+})

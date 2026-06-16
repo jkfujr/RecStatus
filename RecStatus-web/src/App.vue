@@ -1,5 +1,6 @@
 <template>
   <n-config-provider :theme="themeStore.currentTheme">
+    <n-global-style />
     <n-loading-bar-provider>
       <n-dialog-provider>
         <n-notification-provider>
@@ -124,4 +125,4 @@ html.dark {
     background: #5c5d5f;
   }
 }
-</style> 
+</style>

@@ -23,7 +23,7 @@
         </div>
       </aside>
       <main class="main-content">
-        <n-scrollbar class="main-scrollbar">
+        <n-scrollbar class="main-scrollbar" :trigger="mainScrollbarTrigger">
           <router-view />
         </n-scrollbar>
       </main>
@@ -76,6 +76,8 @@ const navigateTo = (key: string) => {
 const sidebarStyle = computed(() => ({
   width: isCollapse.value ? '64px' : '240px'
 }))
+
+const mainScrollbarTrigger = computed(() => route.path === '/settings' ? 'none' : 'hover')
 </script>
 
 <style scoped lang="scss">
@@ -192,4 +194,4 @@ html.dark {
     }
   }
 }
-</style> 
+</style>

@@ -11,6 +11,7 @@ interface LoginResponse {
 interface AuthState {
   token: string | null
   authRequired: boolean
+  checked: boolean
   loading: boolean
   error: string | null
 }
@@ -19,6 +20,7 @@ export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     token: null,
     authRequired: false,
+    checked: false,
     loading: false,
     error: null
   }),
@@ -56,6 +58,7 @@ export const useAuthStore = defineStore('auth', {
         this.error = (error as Error).message
         return false
       } finally {
+        this.checked = true
         this.loading = false
       }
     },
@@ -128,4 +131,4 @@ export const useAuthStore = defineStore('auth', {
       globalService.message?.success('已退出登录')
     }
   }
-}) 
+})

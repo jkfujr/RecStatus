@@ -67,7 +67,7 @@ jobs:
       - name: Build WebUI
         working-directory: ./RecStatus-web
         run: |
-          npm install
+          npm ci
           npm run build
           rm -rf ../RecStatus/web/*
           mkdir -p ../RecStatus/web
