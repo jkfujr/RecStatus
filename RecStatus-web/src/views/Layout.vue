@@ -102,7 +102,8 @@ const mainScrollbarTrigger = computed(() => route.path === '/settings' ? 'none' 
     flex: 1;
     display: flex;
     margin-top: 64px;
-    min-height: calc(100vh - 64px);
+    height: calc(100vh - 64px);
+    min-height: 0;
     position: relative;
     overflow: hidden;
   }
@@ -153,22 +154,16 @@ const mainScrollbarTrigger = computed(() => route.path === '/settings' ? 'none' 
   
   .main-content {
     flex: 1;
+    height: 100%;
     margin-left: 240px;
+    min-height: 0;
+    min-width: 0;
     transition: margin-left 0.2s ease;
     overflow: hidden;
     background-color: var(--bg-color);
     
     .main-scrollbar {
-      height: calc(100vh - 64px);
-      
-      :deep(.n-scrollbar-container) {
-        height: 100%;
-      }
-      
-      :deep(.n-scrollbar-content) {
-        padding: 20px;
-        min-height: 100%;
-      }
+      height: 100%;
     }
   }
 
